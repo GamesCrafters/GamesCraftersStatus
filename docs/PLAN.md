@@ -123,8 +123,10 @@ Compact: only the overall status and one line per component show at first; a row
 - No new dependencies. The bars and the latency chart are plain SVG.
 - PWA note: Uni's service worker has no runtime caching for cross-origin requests, so status data is always fetched fresh. Returning visitors may still get the Uni shell from the service-worker cache during an nyc outage, but first-time visitors won't, which is why the fallback page exists.
 
-### Fallback page (GitHub Pages, in this repo)
-One plain HTML file in `site/` that renders the overall banner and the current status of each component from `current.json` (same look as the Uni page: dot banner, one list with group labels, dot and status word, reason, since), with "Last checked" time. No history bars. It must work with nyc down. It is linked from the Uni page's footer and pinned in the team's channel.
+### Fallback page (in this repo, `site/index.html`)
+One plain HTML file that renders the overall banner and, for each component, the current status from `current.json` (same look as the Uni page: dot banner, one list with group labels, dot and status word, reason, since) plus the daily history strip from `daily.json`: 90 bars (30 on phones) with the uptime percentage and a hover/keyboard tooltip. Rows don't unfold and there is no latency chart. If `daily.json` can't be loaded, the rows show current status without a strip. It must work with nyc down. It is linked from the Uni page's footer and pinned in the team's channel.
+
+**Hosting:** the org has GitHub Pages disabled, so the file is hosted from a personal account's Pages (a copy of `site/index.html`, re-uploaded whenever it changes) until an org admin allows Pages for this repo. The link in Uni is `fallbackUrl` in `AppStatus.vue`.
 
 ## 7. Data and storage
 

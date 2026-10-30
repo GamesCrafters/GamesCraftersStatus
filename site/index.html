@@ -4,15 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GamesCrafters Status</title>
-<meta name="description" content="Current status of GamesmanUni, its API and solvers. Backup page that works when nyc.cs.berkeley.edu is down.">
+<meta name="description" content="Current status of GamesmanUni, its API and solvers. Backup page that works when the website is down.">
 <style>
   :root {
     --bg: #ffffff; --text: #1e1e1e; --muted: #5a5a5a; --line: #d8d8d8;
     --ok: #0ca30c; --degraded: #fab219; --down: #ef5350; --label: #0b0b0b;
+    --none: rgba(128, 128, 128, 0.28);
     color-scheme: light dark;
   }
+  /* Light is the default. Dark applies when chosen, or when on Auto and the computer is in dark mode. */
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { --bg: #1e1e1e; --text: #f2f2f2; --muted: #b4b4b4; --line: #3a3a3a; color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1e1e1e; --text: #f2f2f2; --muted: #b4b4b4; --line: #3a3a3a; }
+    :root:not([data-theme="light"]) { --bg: #1e1e1e; --text: #f2f2f2; --muted: #b4b4b4; --line: #3a3a3a; }
   }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; }
@@ -21,6 +25,17 @@
   .eyebrow { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; }
   h1 { color: var(--muted); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; margin: 0; text-transform: uppercase; }
   .checked { color: var(--muted); font-size: 0.85rem; }
+  .right { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  /* Light/dark slider: sun on the left, moon on the right; the thumb sits behind the active one. */
+  .theme { background: none; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; display: block; flex: none; height: 28px; padding: 0; position: relative; width: 54px; }
+  .theme:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .theme .thumb { background: var(--text); border-radius: 50%; height: 22px; left: 2px; position: absolute; top: 2px; transition: transform 0.2s; width: 22px; }
+  .theme[aria-checked="true"] .thumb { transform: translateX(26px); }
+  .theme svg { color: var(--muted); fill: none; height: 14px; position: absolute; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; top: 6px; width: 14px; }
+  .theme .sun { left: 6px; }
+  .theme .moon { right: 6px; }
+  .theme[aria-checked="false"] .sun, .theme[aria-checked="true"] .moon { color: var(--bg); }
+  @media (prefers-reduced-motion: reduce) { .theme .thumb { transition: none; } }
   .subtitle { color: var(--muted); margin: 0; }
   .dot { border-radius: 50%; display: inline-block; flex: none; height: 10px; width: 10px; }
   .dot.ok { background: var(--ok); }
@@ -38,7 +53,22 @@
   #groups { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   #groups:empty { display: none; }
   h2 { border-top: 1px solid var(--line); color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; margin: -1px 0 0; padding: 12px 18px 4px; text-transform: uppercase; }
-  .row { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 12px; min-height: 52px; padding: 8px 18px; }
+  .row { border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; padding: 10px 18px 12px; }
+  .top { align-items: center; display: flex; gap: 12px; min-height: 36px; }
+  .frame { margin-top: 6px; position: relative; }
+  .bars { display: flex; height: 32px; margin: 0 -1px; }
+  .bars:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; }
+  .slot { flex: 1; min-width: 0; padding: 0 1px; }
+  .slot i { background: var(--none); border-radius: 2px; display: block; height: 100%; position: relative; }
+  .slot i.ok { background: var(--ok); }
+  .slot i.degraded { background: var(--degraded); }
+  .slot i.down { background: var(--down); }
+  .slot.selected i { box-shadow: 0 0 0 2px var(--text); z-index: 1; }
+  .tip { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; bottom: 100%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; font-size: 0.8rem; margin-bottom: 8px; padding: 5px 10px; pointer-events: none; position: absolute; white-space: nowrap; z-index: 2; }
+  .tip[hidden] { display: none; }
+  .tip span:last-child { color: var(--muted); }
+  .legend { align-items: center; color: var(--muted); display: flex; font-size: 0.8rem; gap: 10px; margin-top: 4px; }
+  .rule { background: var(--line); flex: 1; height: 1px; }
   .title { display: flex; flex: 1; flex-direction: column; min-width: 0; }
   .name { font-weight: 600; }
   .reason { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
@@ -52,19 +82,20 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow"><h1>GamesCrafters Status</h1><span id="checked" class="checked"></span></div>
+    <div class="eyebrow"><h1>GamesCrafters Status</h1><div class="right"><span id="checked" class="checked"></span><button id="theme" class="theme" type="button" role="switch" aria-checked="false" aria-label="Dark mode"><span class="thumb"></span><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button></div></div>
     <div id="banner" role="status"><span>Loading status…</span></div>
     <p id="stale" class="warning" hidden>Status data may be stale: no check has completed in over 5 hours.</p>
-    <p class="subtitle">Live status of GamesCrafters services, checked every hour. Times are in UTC. This backup page works even when nyc.cs.berkeley.edu is down.</p>
+    <p class="subtitle">This is a backup page for the <a href="https://nyc.cs.berkeley.edu/uni/status">GamesCrafters status page</a>. It shows the live status of GamesCrafters services, and works even when the website is down. To view latency, details and more, visit the <a href="https://nyc.cs.berkeley.edu/uni/status">full status page</a>. Times are in UTC.</p>
     <p id="refresh-failed" class="notice" role="alert" hidden>Couldn't refresh status. Showing the last data received.</p>
     <p id="newer-schema" class="notice" hidden>The status data is newer than this page. Some details may be missing.</p>
   </header>
   <div id="groups"></div>
-  <footer><a href="https://nyc.cs.berkeley.edu/uni/status">Full status page with 90-day history</a><a href="https://github.com/GamesCrafters/GamesCraftersStatus">How this works</a></footer>
+  <footer><a href="https://nyc.cs.berkeley.edu/uni/status">Full status page with details and latency</a><a href="https://github.com/GamesCrafters/GamesCraftersStatus">How this works</a></footer>
 </main>
 <script>
   "use strict";
-  // Contract: docs/DATA_FORMATS.md (current.json). This page shows only the current state.
+  // Contract: docs/DATA_FORMATS.md. Shows the current state (current.json) and a daily history bar
+  // strip per component (daily.json). If daily.json can't be loaded, the rows simply have no strip.
   const DEFAULT_SOURCE = "https://raw.githubusercontent.com/GamesCrafters/GamesCraftersStatus/data";
   const KNOWN_SCHEMA = 1;
   const STALE_AFTER_MS = 5 * 60 * 60 * 1000;
@@ -79,7 +110,11 @@
   const source = (override || DEFAULT_SOURCE).replace(/\/$/, "");
 
   let data = null;
+  let daily = null;
   let failed = false;
+  let selected = null; // the day being looked at: { id, key }
+  let rebuilding = false;
+  const narrow = window.matchMedia("(max-width: 600px)");
 
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -113,6 +148,88 @@
     return isDown("frontend") || isDown("api") || (solvers.length > 0 && solvers.every(isDown)) ? "major" : "down";
   };
 
+  // Days are UTC calendar days (YYYY-MM-DD), like the keys in daily.json.
+  const dayKeyOf = (time) => new Date(time).toISOString().slice(0, 10);
+  const lastDayKeys = (count) => {
+    const today = Date.parse(dayKeyOf(Date.now()) + "T00:00:00Z");
+    return Array.from({ length: count }, (_, i) => dayKeyOf(today - (count - 1 - i) * 86400000));
+  };
+  const num = (value) => (typeof value === "number" && value > 0 ? value : 0);
+  const hasData = (day) => !!day && num(day.checks) > 0;
+  const dayState = (day) => (!hasData(day) ? "none" : num(day.down) > 0 ? "down" : num(day.degraded) > 0 ? "degraded" : "ok");
+  // Rounds down, so any failure keeps the number below 100%.
+  const percent = (ratio) => new Intl.NumberFormat("en", { maximumFractionDigits: 2 }).format(Math.floor(ratio * 10000) / 100) + "%";
+  const shortDay = (key) => new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(key + "T00:00:00Z"));
+  const upRatio = (days) => {
+    let up = 0, checks = 0;
+    for (const day of days) if (hasData(day)) { up += num(day.ok) + num(day.degraded); checks += num(day.checks); }
+    return checks ? up / checks : undefined;
+  };
+  // Two short lines: "Oct 17 · 95.83% uptime", then "24 checks · 23 ok, 1 down".
+  const describeDay = (key, day) => {
+    if (!hasData(day)) return [shortDay(key), "no data"];
+    const counts = ["ok", "degraded", "down"].filter((s) => num(day[s]) > 0).map((s) => num(day[s]) + " " + s);
+    const checks = num(day.checks) + (num(day.checks) === 1 ? " check" : " checks");
+    return [shortDay(key) + " · " + percent((num(day.ok) + num(day.degraded)) / num(day.checks)) + " uptime", checks + " · " + counts.join(", ")];
+  };
+
+  // The strip of daily bars under a row: 90 days (30 on phones), oldest first, with a tooltip.
+  function history(id, name) {
+    if (!daily) return null;
+    const days = daily.components[id] || {};
+    const keys = lastDayKeys(narrow.matches ? 30 : 90);
+    const frame = el("div", "frame");
+    const bars = el("div", "bars");
+    bars.tabIndex = 0;
+    bars.dataset.bars = id;
+    bars.setAttribute("role", "group");
+    bars.setAttribute("aria-label", name + ": daily status, last " + keys.length + " days");
+    const tip = el("div", "tip");
+    tip.hidden = true;
+    tip.setAttribute("aria-live", "polite");
+    const index = () => (selected && selected.id === id ? keys.indexOf(selected.key) : -1);
+    const slots = keys.map((key, i) => {
+      const slot = el("span", "slot");
+      slot.append(el("i", dayState(days[key])));
+      const pick = () => { selected = { id, key: keys[i] }; paint(); };
+      slot.addEventListener("mouseenter", pick);
+      slot.addEventListener("click", pick);
+      return slot;
+    });
+    function paint() {
+      const i = index();
+      slots.forEach((slot, j) => slot.classList.toggle("selected", j === i));
+      tip.hidden = i < 0;
+      if (i < 0) return;
+      const [head, detail] = describeDay(keys[i], days[keys[i]]);
+      tip.replaceChildren(el("span", "", head), el("span", "", detail));
+      const center = ((i + 0.5) / keys.length) * 100;
+      tip.style.left = center + "%";
+      tip.style.transform = "translateX(-" + (center < 20 ? 0 : center > 80 ? 100 : 50) + "%)";
+    }
+    const clear = () => { if (rebuilding) return; if (selected && selected.id === id) selected = null; paint(); };
+    bars.addEventListener("mouseleave", clear);
+    bars.addEventListener("blur", clear);
+    bars.addEventListener("mousedown", (event) => event.preventDefault()); // no focus ring on click
+    bars.addEventListener("keydown", (event) => {
+      const last = keys.length - 1;
+      const current = index() < 0 ? last : index();
+      const next = { ArrowLeft: current - 1, ArrowRight: current + 1, Home: 0, End: last }[event.key];
+      if (next === undefined) return;
+      event.preventDefault();
+      selected = { id, key: keys[index() < 0 ? last : Math.min(last, Math.max(0, next))] };
+      paint();
+    });
+    bars.append(...slots);
+    frame.append(bars, tip);
+    paint();
+
+    const ratio = upRatio(keys.map((key) => days[key]));
+    const legend = el("div", "legend");
+    legend.append(el("span", "", keys.length + " days ago"), el("span", "rule"), el("span", "", ratio === undefined ? "no data" : percent(ratio) + " uptime"), el("span", "rule"), el("span", "", "Today"));
+    return [frame, legend];
+  }
+
   const timeNode = (iso) => {
     const node = el("time", "", relative(iso));
     node.dateTime = iso;
@@ -141,6 +258,8 @@
     document.getElementById("newer-schema").hidden = !(data.schemaVersion > KNOWN_SCHEMA);
 
     const groups = document.getElementById("groups");
+    const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.bars : undefined;
+    rebuilding = true; // rebuilding the rows must not count as the strip losing focus
     groups.replaceChildren();
     for (const group of data.groups || []) {
       const section = el("section");
@@ -150,6 +269,7 @@
         if (!component) continue;
         const status = known(component.status);
         const row = el("div", "row");
+        const top = el("div", "top");
         const title = el("div", "title");
         title.append(el("span", "name", component.name || id));
         if (status !== "ok") title.append(el("span", "reason", component.detail));
@@ -161,31 +281,59 @@
         const since = el("span", "since", "since ");
         since.append(timeNode(component.since));
         side.append(state, since);
-        row.append(title, side);
+        top.append(title, side);
+        row.append(top);
+        const strip = history(id, component.name || id);
+        if (strip) row.append(...strip);
         section.append(row);
       }
       groups.append(section);
     }
+    if (focused) {
+      const again = [...groups.querySelectorAll("[data-bars]")].find((node) => node.dataset.bars === focused);
+      if (again) again.focus();
+    }
+    rebuilding = false;
   }
+
+  const getJson = async (file) => {
+    const response = await fetch(source + "/" + file, { cache: "no-cache" });
+    if (!response.ok) throw new Error(file + ": HTTP " + response.status);
+    return response.json();
+  };
+  const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
   let loading = false;
   async function refresh() {
     if (loading) return;
     loading = true;
+    // The two files are independent: current.json is needed; if daily.json fails, the rows just have no strip.
+    const [current, dailyResult] = await Promise.allSettled([getJson("current.json"), getJson("daily.json")]);
     try {
-      const response = await fetch(source + "/current.json", { cache: "no-cache" });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      const next = await response.json();
-      if (!next || typeof next.updatedAt !== "string" || !Array.isArray(next.groups) || !next.components || typeof next.components !== "object") throw new Error("unexpected shape");
+      if (current.status === "rejected") throw current.reason;
+      const next = current.value;
+      if (!isObject(next) || typeof next.updatedAt !== "string" || !Array.isArray(next.groups) || !isObject(next.components)) throw new Error("unexpected shape");
       data = next;
       failed = false;
     } catch (error) {
       console.error("Failed to load status data from " + source, error);
       failed = true;
     }
+    if (dailyResult.status === "fulfilled" && isObject(dailyResult.value) && isObject(dailyResult.value.components)) daily = dailyResult.value;
+    else console.error("Failed to load daily history from " + source, dailyResult.reason);
     loading = false;
     render();
   }
+
+  // Color mode: every visit starts by following the computer (light or dark). The slider switches
+  // this page until it is reloaded; nothing is saved.
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+  const toggle = document.getElementById("theme");
+  const currentMode = () => document.documentElement.dataset.theme || (prefersDark.matches ? "dark" : "light");
+  const showMode = () => toggle.setAttribute("aria-checked", String(currentMode() === "dark"));
+  toggle.addEventListener("click", () => { document.documentElement.dataset.theme = currentMode() === "dark" ? "light" : "dark"; showMode(); });
+  prefersDark.addEventListener("change", showMode); // until the slider is used, follow the computer live
+  showMode();
 
   // Refresh every minute while visible; catch up when the tab comes back.
   let timer = null;
@@ -194,6 +342,7 @@
     if (document.hidden) { clearInterval(timer); timer = null; }
     else { refresh(); start(); }
   });
+  narrow.addEventListener("change", () => { if (data) render(); });
   setInterval(() => { if (data) render(); }, 15000);
   refresh();
   if (!document.hidden) start();

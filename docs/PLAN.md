@@ -104,26 +104,27 @@ URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. 
 - All strings go through vue-i18n like the rest of the header.
 
 ### Layout (top to bottom)
-1. **Overall banner:** "All systems operational" / "Some systems degraded" / "Partial outage", plus "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 2 hours old, show "Status data may be stale".
-2. **Groups** (Website, API, Solvers), each with its components. Per component:
-   - name, current status pill, "since <relative time>",
-   - 90 daily bars (oldest left, today right) colored by the day's worst status, gray for no data. Hover or tap shows the date, uptime % and counts.
-   - "99.8% uptime (90 days)",
-   - expandable details: latency now, last failure time and reason.
-3. **Latency chart:** daily p95 per component over 90 days (solvers on one chart is fine).
-4. **Footer note:** "Checked hourly from GitHub Actions. Times are UTC. Gray means no data." Link to the fallback page and the repo.
+Compact: only the overall status and one line per component show at first; a row unfolds its history and details when clicked (design "C2", chosen 2026-10-30; header design "H2", status as the headline).
+1. **Title and note:** "System status", with "Live status of GamesCrafters services, checked every hour. Times are in UTC." under it. (What gray means is in each bar's tooltip: "no data".)
+2. **Header (H2):** a small "SYSTEM STATUS" label with "Last checked 3 min ago" on the right, then the overall status as a large headline with a status dot, the stale warning (when stale), the subtitle, and the "Couldn't refresh" notice (when a refresh failed). Partial and major outage look the same apart from the words. Overall status: a status dot and "All systems operational" / "Some systems degraded" / "Partial outage" / "Major outage". Major means people can't use the site at all: the Website or the Universal Web API is down, or all four solvers are down; anything less that is down is partial. The data keeps a single `down`; both pages derive the label from the components. The banner also shows "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 5 hours old (about four skipped runs in a row; GitHub sometimes skips scheduled runs), the banner turns dashed and neutral and says "Status data may be stale".
+3. **Components:** one bordered list with group labels (Website, API, Solvers). Each component is one row (a button): name, the reason under it when not ok, and a dot plus the status word. Rows that are not ok start open, others closed; a click toggles a row, and that choice is kept across refreshes. An open row shows:
+   - 90 daily bars (oldest left, today right) colored by the day's worst status, gray for no data. Hover, tap or arrow keys show a tooltip with the date, uptime % and counts.
+   - a legend line "90 days ago ── 99.8% uptime ── Today",
+   - details, in a soft box with labels on the left: status and since, latency now, last checked, and last failure time and reason ("None recorded" if there was none). Last failure is always shown, even when it is the current problem, so the box always has the same four lines.
+4. **Latency (daily p95):** a collapsed row. Open, it shows text tabs to choose a component and a card with that component's name and latency now, then the chart: daily p95 over 90 days, drawn in the theme's text color on a log scale (100 ms to 60 s) with the 30 s degraded line; days without data break the line. Hover, tap or arrow keys read out a day, and a table view lists every day. One line at a time because seven colored lines cannot stay readable on all ten theme backgrounds.
+5. **Links:** the fallback page and the repo.
 
 ### Behavior
 - Fetches `current.json` and `daily.json` from `https://raw.githubusercontent.com/GamesCrafters/GamesCraftersStatus/data/` on mount, re-fetches every 60 s while the page is visible, and stops when hidden.
 - If the fetch fails, keep the last data and show "Couldn't refresh status" (never a blank page).
 - Reads `schemaVersion`. If it is higher than the page knows, show a soft warning and render what it can.
-- Uses Uni's theme CSS variables (`--gu-*`) so it works in all 11 themes. Status colors come from one small palette checked for contrast in light and dark themes, and status is never shown by color alone (pill text, tooltip text).
+- Uses only the theme CSS variables `main` already has (`--backgroundColor`, `--primaryColor`, `--neutralColor`, `--fixedWidthFontFamily`), so it works in all 10 themes on `main`; switch to `--gu-*` when `ui-update` merges. Status colors are fixed across themes: ok `#0ca30c`, degraded `#fab219`, down `#ef5350`, used for dots and bars (status words use the theme's text color); no data is the theme's text color at 20% opacity. Checked against every theme background: each color reaches 3:1 on most themes, with known weak spots (degraded on `light`, everything on `sepia`), so status is never shown by color alone: every dot has its status word next to it, and every bar has a text description (hover, tap, arrow keys, screen readers).
 - Works at phone width: bars shrink to 30 days below about 600 px.
 - No new dependencies. The bars and the latency chart are plain SVG.
 - PWA note: Uni's service worker has no runtime caching for cross-origin requests, so status data is always fetched fresh. Returning visitors may still get the Uni shell from the service-worker cache during an nyc outage, but first-time visitors won't, which is why the fallback page exists.
 
 ### Fallback page (GitHub Pages, in this repo)
-One plain HTML file in `site/` that renders the overall banner and the current status of each component from `current.json`, with "Last checked" time. No history bars. It must work with nyc down. It is linked from the Uni page's footer and pinned in the team's channel.
+One plain HTML file in `site/` that renders the overall banner and the current status of each component from `current.json` (same look as the Uni page: dot banner, one list with group labels, dot and status word, reason, since), with "Last checked" time. No history bars. It must work with nyc down. It is linked from the Uni page's footer and pinned in the team's channel.
 
 ## 7. Data and storage
 
@@ -167,10 +168,10 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 - **Done when:** two weeks of data (about 340 hourly checks) with no false `down` and thresholds tuned. Hourly checks need longer than 5-minute ones to show the same amount of behavior.
 
 ### Phase 3: Uni `/status` page (about 1–2 weeks, overlaps with burn-in)
-- **3.1** Branch in GamesmanUni (see open question 3 for the base branch). Add the route, `TheStatusPage.vue`, a small `statusApi.ts` fetcher, the i18n strings and the header link.
-- **3.2** Build it against the live `data` branch, plus a local fixture set covering: all green, an outage, a degraded day, gray days, a long outage, stale data, and fetch failure.
+- **3.1** Branch `feature/status-page` in GamesmanUni (worktree `GamesmanUni-status`). Add the route, `TheStatusPage.vue`, the fetcher (`src/scripts/apis/status/`), the i18n strings and the header link. *Built 2026-10-30:* page in `src/components/units/Status/` (`AppStatus.vue`, `AppStatusComponent.vue`, `AppStatusLatencyChart.vue`); strings in `en-US`, `zh`, `es` (`hi` in English, like the header).
+- **3.2** Build it against the live `data` branch, plus a local fixture set covering: all green, an outage, a degraded day, gray days, a long outage, stale data, and fetch failure. *Fixtures:* `fixtures/make_fixtures.py` (sets relative to now, written to the git-ignored `fixtures/out/`) and `fixtures/serve.py` (port 8099, CORS, a `flaky` set that alternates good and failing loads). In `yarn dev`, pick a set from the **Dev data** dropdown in the bottom-right corner of `/uni/status` (or open `/uni/status?data=http://localhost:8099/<set>`); the dropdown is left out of production builds, which also ignore `?data=`.
 - **3.3** Check all themes, phone width, and keyboard/screen-reader basics (pills have text, bars have labels).
-- **3.4 Fallback page** in `site/` of the Status repo.
+- **3.4 Fallback page** in `site/` of the Status repo. *Built 2026-10-30:* `site/index.html`, one file, no dependencies. Fixtures work only when it is opened from localhost (`?data=`).
 - **Done when:** `yarn build` passes, every fixture renders correctly, and the team has reviewed it locally (`yarn preview`).
 
 ### Phase 4: Ship on Uni

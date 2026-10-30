@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GamesCrafters Status</title>
+<meta name="description" content="Current status of GamesmanUni, its API and solvers. Backup page that works when nyc.cs.berkeley.edu is down.">
+<style>
+  :root {
+    --bg: #ffffff; --text: #1e1e1e; --muted: #5a5a5a; --line: #d8d8d8;
+    --ok: #0ca30c; --degraded: #fab219; --down: #ef5350; --label: #0b0b0b;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1e1e1e; --text: #f2f2f2; --muted: #b4b4b4; --line: #3a3a3a; }
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; }
+  main { display: flex; flex-direction: column; gap: 16px; margin: 0 auto; max-width: 44rem; padding: 2rem 1rem 3rem; }
+  header { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+  .eyebrow { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; }
+  h1 { color: var(--muted); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; margin: 0; text-transform: uppercase; }
+  .checked { color: var(--muted); font-size: 0.85rem; }
+  .subtitle { color: var(--muted); margin: 0; }
+  .dot { border-radius: 50%; display: inline-block; flex: none; height: 10px; width: 10px; }
+  .dot.ok { background: var(--ok); }
+  .dot.degraded { background: var(--degraded); }
+  .dot.down { background: var(--down); }
+  #banner { align-items: center; display: flex; gap: 14px; min-height: 2.5rem; }
+  #banner .dot { height: 14px; margin-left: 6px; width: 14px; }
+  #banner .dot.ok { box-shadow: 0 0 0 6px rgba(12, 163, 12, 0.22); }
+  #banner .dot.degraded { box-shadow: 0 0 0 6px rgba(250, 178, 25, 0.22); }
+  #banner .dot.down { box-shadow: 0 0 0 6px rgba(239, 83, 80, 0.22); }
+  #banner .dot.stale { border: 2px dashed var(--text); box-sizing: border-box; }
+  #banner strong { font-size: 2rem; font-weight: 800; line-height: 1.15; }
+  .warning { font-weight: 600; margin: 0; }
+  .notice { margin: 0; }
+  #groups { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  #groups:empty { display: none; }
+  h2 { border-top: 1px solid var(--line); color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; margin: -1px 0 0; padding: 12px 18px 4px; text-transform: uppercase; }
+  .row { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 12px; min-height: 52px; padding: 8px 18px; }
+  .title { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+  .name { font-weight: 600; }
+  .reason { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+  .state { align-items: center; display: flex; gap: 7px; font-size: 0.9rem; white-space: nowrap; }
+  .since { color: var(--muted); font-size: 0.8rem; text-align: right; }
+  .side { align-items: flex-end; display: flex; flex-direction: column; }
+  footer { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 0.9rem; gap: 4px 16px; justify-content: center; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow"><h1>GamesCrafters Status</h1><span id="checked" class="checked"></span></div>
+    <div id="banner" role="status"><span>Loading status…</span></div>
+    <p id="stale" class="warning" hidden>Status data may be stale: no check has completed in over 5 hours.</p>
+    <p class="subtitle">Live status of GamesCrafters services, checked every hour. Times are in UTC. This backup page works even when nyc.cs.berkeley.edu is down.</p>
+    <p id="refresh-failed" class="notice" role="alert" hidden>Couldn't refresh status. Showing the last data received.</p>
+    <p id="newer-schema" class="notice" hidden>The status data is newer than this page. Some details may be missing.</p>
+  </header>
+  <div id="groups"></div>
+  <footer><a href="https://nyc.cs.berkeley.edu/uni/status">Full status page with 90-day history</a><a href="https://github.com/GamesCrafters/GamesCraftersStatus">How this works</a></footer>
+</main>
+<script>
+  "use strict";
+  // Contract: docs/DATA_FORMATS.md (current.json). This page shows only the current state.
+  const DEFAULT_SOURCE = "https://raw.githubusercontent.com/GamesCrafters/GamesCraftersStatus/data";
+  const KNOWN_SCHEMA = 1;
+  const STALE_AFTER_MS = 5 * 60 * 60 * 1000;
+  const REFRESH_MS = 60 * 1000;
+  const STATUS = { ok: "Operational", degraded: "Degraded", down: "Down" };
+  const OVERALL = { ok: "All systems operational", degraded: "Some systems degraded", down: "Partial outage", major: "Major outage" };
+
+  // `?data=<url>` points the page at local fixtures, but only when the page itself is opened from
+  // this computer, so a shared link can never make the real page show someone else's data.
+  const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:";
+  const override = isLocal && new URLSearchParams(location.search).get("data");
+  const source = (override || DEFAULT_SOURCE).replace(/\/$/, "");
+
+  let data = null;
+  let failed = false;
+
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const known = (status) => (Object.prototype.hasOwnProperty.call(STATUS, status) ? status : "down");
+
+  // A missing or malformed time shows as "–" instead of breaking the page.
+  const validTime = (iso) => typeof iso === "string" && !Number.isNaN(new Date(iso).getTime());
+  const relative = (iso) => {
+    if (!validTime(iso)) return "–";
+    const seconds = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+    const format = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    const abs = Math.abs(seconds);
+    if (abs < 60) return format.format(0, "second");
+    if (abs < 3600) return format.format(Math.round(seconds / 60), "minute");
+    if (abs < 48 * 3600) return format.format(Math.round(seconds / 3600), "hour");
+    return format.format(Math.round(seconds / 86400), "day");
+  };
+  const utc = (iso) => (validTime(iso) ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "–");
+
+  // "Major outage" when people can't use the site at all: the website or the API is down, or every
+  // solver is down. Anything less that is down is a partial outage.
+  const overallKey = (data, overall) => {
+    if (overall !== "down") return overall;
+    const isDown = (id) => !!data.components[id] && known(data.components[id].status) === "down";
+    const group = (data.groups || []).find((g) => g.id === "solvers");
+    const solvers = group ? (group.components || []).filter((id) => data.components[id]) : [];
+    return isDown("frontend") || isDown("api") || (solvers.length > 0 && solvers.every(isDown)) ? "major" : "down";
+  };
+
+  const timeNode = (iso) => {
+    const node = el("time", "", relative(iso));
+    node.dateTime = iso;
+    node.title = utc(iso);
+    return node;
+  };
+
+  function render() {
+    document.getElementById("refresh-failed").hidden = !(failed && data);
+    const banner = document.getElementById("banner");
+    const checkedEl = document.getElementById("checked");
+    banner.replaceChildren();
+    checkedEl.replaceChildren();
+    if (!data) {
+      document.getElementById("stale").hidden = true;
+      banner.append(el("span", "", failed ? "Couldn't load status. Trying again every minute." : "Loading status…"));
+      return;
+    }
+    const overall = known(data.overall);
+    const stale = Date.now() - new Date(data.updatedAt).getTime() > STALE_AFTER_MS;
+    const dot = el("span", "dot " + (stale ? "stale" : overall));
+    dot.setAttribute("aria-hidden", "true");
+    banner.append(dot, el("strong", "", OVERALL[overallKey(data, overall)]));
+    checkedEl.append("Last checked ", timeNode(data.updatedAt));
+    document.getElementById("stale").hidden = !stale;
+    document.getElementById("newer-schema").hidden = !(data.schemaVersion > KNOWN_SCHEMA);
+
+    const groups = document.getElementById("groups");
+    groups.replaceChildren();
+    for (const group of data.groups || []) {
+      const section = el("section");
+      section.append(el("h2", "", group.name));
+      for (const id of group.components || []) {
+        const component = data.components[id];
+        if (!component) continue;
+        const status = known(component.status);
+        const row = el("div", "row");
+        const title = el("div", "title");
+        title.append(el("span", "name", component.name || id));
+        if (status !== "ok") title.append(el("span", "reason", component.detail));
+        const side = el("div", "side");
+        const state = el("span", "state");
+        const dot = el("span", "dot " + status);
+        dot.setAttribute("aria-hidden", "true");
+        state.append(dot, STATUS[status]);
+        const since = el("span", "since", "since ");
+        since.append(timeNode(component.since));
+        side.append(state, since);
+        row.append(title, side);
+        section.append(row);
+      }
+      groups.append(section);
+    }
+  }
+
+  let loading = false;
+  async function refresh() {
+    if (loading) return;
+    loading = true;
+    try {
+      const response = await fetch(source + "/current.json", { cache: "no-cache" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const next = await response.json();
+      if (!next || typeof next.updatedAt !== "string" || !Array.isArray(next.groups) || !next.components || typeof next.components !== "object") throw new Error("unexpected shape");
+      data = next;
+      failed = false;
+    } catch (error) {
+      console.error("Failed to load status data from " + source, error);
+      failed = true;
+    }
+    loading = false;
+    render();
+  }
+
+  // Refresh every minute while visible; catch up when the tab comes back.
+  let timer = null;
+  function start() { clearInterval(timer); timer = setInterval(refresh, REFRESH_MS); }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { clearInterval(timer); timer = null; }
+    else { refresh(); start(); }
+  });
+  setInterval(() => { if (data) render(); }, 15000);
+  refresh();
+  if (!document.hidden) start();
+</script>
+</body>
+</html>

@@ -188,6 +188,38 @@ Rules:
 - **Recompute:** every probe run rebuilds **today's** entry from today's raw files, so today's bar is at most one run behind and self-heals after a failed run. Past days are never rewritten.
 - `daily.json` keeps every day (about 100 KB per year).
 
+## 5. Health endpoints on nyc (plan step 5.3, not deployed yet)
+
+The prober does not need these; once deployed they give better failure details.
+
+**UWAPI `GET /universal/v1/health/`**: always HTTP 200, cached 30 s.
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-29T19:05:12Z",
+  "cached": false,
+  "components": {
+    "solver-classic": { "status": "ok",   "latencyMs": 142,  "detail": "canary ok" },
+    "solver-one":     { "status": "ok",   "latencyMs": 388,  "detail": "canary ok" },
+    "solver-puzzles": { "status": "down", "latencyMs": 95,   "detail": "canary returned no data" },
+    "solver-py":      { "status": "down", "latencyMs": null, "detail": "solver unreachable: ConnectionError" }
+  }
+}
+```
+
+- `status` is only `ok` or `down`; the prober decides `degraded` from `latencyMs`.
+- Each backend: the solver's own `/health` must answer (any HTTP response), then the canary (same values as section 1) must match.
+- `detail`: `canary ok`, `canary mismatch: expected <value>/<remoteness>, got <value>/<remoteness>`, `canary returned no data`, `canary returned no moves`, `solver unreachable: <ErrorClass>`, `timeout after 5000 ms`, `check failed: <ErrorClass>`, `canary <game>/<variant> is not registered`.
+
+**Solver `GET /health`** (localhost only, called by UWAPI): liveness only, always HTTP 200.
+
+```json
+{ "status": "ok", "uptimeSeconds": 86400, "rssMb": 42.1, "timestamp": "2026-10-29T19:05:12Z" }
+```
+
+GamesmanClassic adds `"gameProcesses": 3` (game processes currently running; they start on demand and exit when idle).
+
 ## Who writes what
 
 | File | Written by | When |

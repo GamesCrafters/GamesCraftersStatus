@@ -28,19 +28,19 @@ Later, Uni can use the same data to warn users in place ("GamesmanPuzzles is hav
 | Canary values unverified | **Verified against the live API on 2026-10-29** (section 4) | nyc is back. |
 | Build the page first, then collect data | **Start collecting data early, build the page against real history** | History bars need history. Turning the prober on weeks before the page ships means the page launches with real data instead of 90 gray bars. |
 
-Kept from before: GitHub Actions on a public repo, JSON files on a `data` branch (no database), the 2-probe debounce, degraded = correct but slow, gray = no data (never counted as down), and the decisions already recorded in DATA_FORMATS.md.
+Kept from before: GitHub Actions on a public repo, JSON files on a `data` branch (no database), the retry-before-recording rule, degraded = correct but slow, gray = no data (never counted as down), and the decisions already recorded in DATA_FORMATS.md.
 
 ## 3. Architecture
 
 ```
- GitHub Actions (every 5 min)          nyc.cs.berkeley.edu (unchanged for v1)
+ GitHub Actions (hourly)               nyc.cs.berkeley.edu (unchanged for v1)
  ┌──────────────────────────┐          ┌───────────────────────────────────────────┐
  │ prober (Python)          │─ HTTPS ─▶│ nginx                                     │
  │  - GET /uni/ + its JS    │          │  ├─ /uni/        GamesmanUni (static SPA)  │
  │  - GET /universal/v1/    │          │  └─ /universal/v1/  UWAPI (Flask :8082)    │
  │  - 4 solver canaries     │          │        ├─ GamesmanClassic  :8083           │
  │  - 1 instructions check  │          │        ├─ GamesmanOne      :8084           │
- │ debounce, write JSON     │          │        ├─ GamesmanPuzzles  :9001           │
+ │ retry, write JSON        │          │        ├─ GamesmanPuzzles  :9001           │
  └────────────┬─────────────┘          │        ├─ GamesmanPy       :9004           │
               │ git push               │        └─ Explainers repo (instructions)   │
               ▼                        └───────────────────────────────────────────┘
@@ -63,7 +63,7 @@ Three repos are involved:
 
 Seven components, in three groups. Ids are permanent.
 
-| id | Group | Display name | Check (all GETs, 10 s timeout) | ok when |
+| id | Group | Display name | Check (all GETs, 60 s timeout) | ok when |
 |---|---|---|---|---|
 | `frontend` | Website | GamesmanUni | `/uni/`, then the main `/uni/assets/index.*.js` it references | both 200; HTML contains `<title>GamesmanUni</title>` and `id="app"` |
 | `api` | API | Universal Web API | `/universal/v1/` | 200, JSON list with at least 50 games (112 today) |
@@ -84,14 +84,14 @@ Seven components, in three groups. Ids are permanent.
 
 URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. Canaries live in the prober config, not in code, so they can be changed without touching logic. If a canary game is ever removed or re-solved on purpose, update the config in the same PR.
 
-**Load on nyc:** 7 to 8 small GETs every 5 minutes, about 2,300 a day. Negligible.
+**Load on nyc:** 7 to 8 small GETs an hour (a few more on a retry), under 200 a day. Negligible.
 
 ## 5. Status rules
 
-- **down:** no response, timeout (10 s), non-2xx, unparseable body, or a wrong answer (canary mismatch, empty instructions, missing marker).
-- **degraded:** the answer is correct but latency is above the component's threshold. Starting threshold is **2,000 ms** for every component (observed latency is 40–300 ms). Tune after burn-in.
+- **down:** no response, timeout (60 s), non-2xx, unparseable body, or a wrong answer (canary mismatch, empty instructions, missing marker).
+- **degraded:** the answer is correct but latency is above the component's threshold. Starting threshold is **30,000 ms** for every component, and anything over a minute is down. This is deliberately very loose: usage is a handful of users at a time, so a slow solver is fine, and only an extremely slow answer should turn yellow. (Idle latency is 40–300 ms.) Tune after burn-in.
 - **ok:** otherwise.
-- **Debounce:** the confirmed status changes only after **2 consecutive probes** agree on the new status, so an outage is confirmed in 5–10 minutes. Details in DATA_FORMATS.md.
+- **Schedule and retry:** the prober runs **hourly**. If a component is not `ok`, it is re-checked once, 90 s later, in the same run, and the retry result is what gets recorded, so one blip never reaches the page and a real problem is confirmed within a single run (about an hour after it starts at worst). Table of outcomes in DATA_FORMATS.md. A club-level site with few users does not need faster, and 3–5 checks a day would be too sparse to be useful (outages could fall between checks, history would be thin).
 - **No data is never down.** Skipped or delayed GitHub runs show as gray and are left out of uptime.
 - **If nyc is entirely unreachable,** every component is `down` with its own real reason (e.g. `ConnectTimeout`). No separate "unknown" state.
 - **overall** = the worst confirmed status of any component.
@@ -104,14 +104,14 @@ URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. 
 - All strings go through vue-i18n like the rest of the header.
 
 ### Layout (top to bottom)
-1. **Overall banner:** "All systems operational" / "Some systems degraded" / "Partial outage", plus "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 30 minutes old, show "Status data may be stale".
+1. **Overall banner:** "All systems operational" / "Some systems degraded" / "Partial outage", plus "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 2 hours old, show "Status data may be stale".
 2. **Groups** (Website, API, Solvers), each with its components. Per component:
    - name, current status pill, "since <relative time>",
    - 90 daily bars (oldest left, today right) colored by the day's worst confirmed status, gray for no data. Hover or tap shows the date, uptime % and counts.
    - "99.8% uptime (90 days)",
-   - expandable details: latency now, last failure time and reason, a pending change if there is one ("1 of 2 probes saw down").
+   - expandable details: latency now, last failure time and reason.
 3. **Latency chart:** daily p95 per component over 90 days (solvers on one chart is fine).
-4. **Footer note:** "Checked every 5 minutes from GitHub Actions. Times are UTC. Gray means no data." Link to the fallback page and the repo.
+4. **Footer note:** "Checked hourly from GitHub Actions. Times are UTC. Gray means no data." Link to the fallback page and the repo.
 
 ### Behavior
 - Fetches `current.json` and `daily.json` from `https://raw.githubusercontent.com/GamesCrafters/GamesCraftersStatus/data/` on mount, re-fetches every 60 s while the page is visible, and stops when hidden.
@@ -130,12 +130,12 @@ One plain HTML file in `site/` that renders the overall banner and the current s
 The data contract is in [DATA_FORMATS.md](DATA_FORMATS.md). In short:
 - `data` branch: `raw/YYYY-MM-DD/HHMMSS.json` (one per run, kept 30 days), `current.json` (latest state, overwritten), `daily.json` (per component per UTC day; today's entry recomputed every run).
 - `main` branch: code, config, workflows, fallback page.
-- The browser reads `data` through raw.githubusercontent.com (up to 5 min of CDN caching, so the page is at most about 10 minutes behind reality).
+- The browser reads `data` through raw.githubusercontent.com (up to 5 min of CDN caching, so the page is at most about 1 hour and 5 minutes behind reality).
 
 ## 8. Operations
 
-- **Workflows:** `probe.yml` (cron `*/5`, plus manual trigger) and `cleanup.yml` (daily, deletes raw files older than 30 days). Both use the same `concurrency` group so they never push at the same time. Pushes retry with `git pull --rebase`.
-- **Repo:** public, so Actions minutes are free (about 8,600 min/month at 5-minute runs would exceed a private repo's allowance).
+- **Workflows:** `probe.yml` (cron `7 * * * *`, hourly at 7 past, plus manual trigger; avoiding the top of the hour, when GitHub is busiest) and `cleanup.yml` (daily, deletes raw files older than 30 days). Both use the same `concurrency` group so they never push at the same time. Pushes retry with `git pull --rebase`.
+- **Repo:** public, so Actions minutes are free (a private repo would use its free minutes up faster).
 - **60-day auto-disable:** GitHub disables cron in public repos after 60 days without repo activity. Data commits should count. Verify during burn-in, and add a monthly keepalive as a safety net.
 - **Data branch growth:** about 300 small commits a day. Squash the `data` branch history yearly if clone size matters (the page only reads the latest files).
 - **Privacy:** everything in the repo, logs and data is public. Store only status, latency, HTTP code and short sanitized details (expected vs. got, error class). Never response bodies, headers, IPs or secrets. The prober never prints response bodies.
@@ -151,9 +151,9 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 ### Phase 1: Prober, locally against live nyc (about 1 week)
 - **1.1 Finalize DATA_FORMATS.md** (drop the DRAFT label). Done when the team agrees on it.
 - **1.2 Prober config** `prober/config.json`: the components, URLs, canaries, thresholds and groups from section 4.
-- **1.3 Prober script** `prober/probe.py` (Python 3, `requests` only). Runs all checks in parallel with timeouts, applies the status rules and the debounce against the previous `current.json`, writes the raw file, `current.json` and today's `daily.json` entry. Takes a `--data-dir` argument so it runs against a local folder.
-- **1.4 Tests** (`pytest`, a local fake server): ok, slow (degraded), wrong canary, empty instructions, 500, timeout, connection refused; debounce (one blip doesn't flip, two do); `since`/`pending`/`lastFailure` bookkeeping; daily recompute including gaps; UTC day rollover.
-- **1.5 Live run:** run the prober locally against real nyc for a few hours (a loop every 5 minutes) and check that the files look right and nothing reports `down` falsely.
+- **1.3 Prober script** `prober/probe.py` (Python 3, `requests` only). Runs all checks in parallel with timeouts, applies the status rules and the in-run retry, writes the raw file, `current.json` and today's `daily.json` entry. Takes a `--data-dir` argument so it runs against a local folder.
+- **1.4 Tests** (`pytest`, a local fake server): ok, slow (degraded), wrong canary, empty instructions, 500, timeout, connection refused; retry (a blip that passes on retry is recorded ok, two failures are recorded down, only non-ok components are re-checked); `since`/`lastFailure` bookkeeping; daily recompute including gaps; UTC day rollover.
+- **1.5 Live run:** run the prober locally against real nyc for a few hours (a loop every few minutes) and check that the files look right and nothing reports `down` falsely.
 - **1.6 Cleanup script** `prober/cleanup.py` (delete raw days older than 30) with a test.
 - **Done when:** tests pass and a live local run produces correct files.
 
@@ -162,8 +162,8 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 - **2.2 [GO] Create `GamesCrafters/GamesCraftersStatus`** (public; an org admin may need to enable Actions). Push `main`, create the `data` branch.
 - **2.3 [GO] Turn on the schedule.** Trigger once manually, confirm files land on `data`, then let the cron run.
 - **2.4 Burn-in.** Watch for false alarms and flapping, measure real GitHub-to-nyc latency and set thresholds, measure how often GitHub skips runs, confirm the schedule stays enabled.
-- **2.5 Induced-failure checks** that need no nyc access: point one canary at a wrong expected value in a branch run, and point one URL at a dead host. Confirm `down` after 2 probes and recovery after 2 more.
-- **Done when:** a week of data with no false `down` and thresholds tuned.
+- **2.5 Induced-failure checks** that need no nyc access: point one canary at a wrong expected value in a branch run, and point one URL at a dead host. Confirm `down` when the retry also fails, and recovery on the next good run.
+- **Done when:** two weeks of data (about 340 hourly checks) with no false `down` and thresholds tuned. Hourly checks need longer than 5-minute ones to show the same amount of behavior.
 
 ### Phase 3: Uni `/status` page (about 1–2 weeks, overlaps with burn-in)
 - **3.1** Branch in GamesmanUni (see open question 3 for the base branch). Add the route, `TheStatusPage.vue`, a small `statusApi.ts` fetcher, the i18n strings and the header link.
@@ -179,11 +179,11 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 - **4.4** Announce to the team, and add a status badge or link to the GamesmanUni README.
 
 ### Phase 5: Later (each independent, in suggested order)
-- **5.1 Slack alerts** on confirmed state changes (down, degraded, recovered), webhook in an Actions secret, plus a dead-man alert if `current.json` is older than 30 minutes.
+- **5.1 Slack alerts** on confirmed state changes (down, degraded, recovered), webhook in an Actions secret, plus a dead-man alert if `current.json` is older than 2 hours.
 - **5.2 Header status dot** and **in-context warnings** in Uni: a small banner on game pages whose solver is currently down.
 - **5.3 Health endpoints (drafted 2026-10-29, local branches, not pushed).** The existing endpoints were inaccurate: every solver's `/health` reported `ok` from CPU and memory of its own HTTP process without touching solved data, returned 503 for "busy", and read CPU as 0.0 after restarts. UWAPI's `/health/` only relayed those, and `/games/health/` fanned out to about 700 backend requests per call with timeout handling that could never fire. Drafted fixes:
   - **Solvers** (`fix/health-liveness` in GamesmanClassic, One, Puzzles, Py): `/health` is honest liveness only: always 200 with `status`, `uptimeSeconds`, `rssMb` (Classic also `gameProcesses`). Classic also accepts `/health/` and query strings.
-  - **UWAPI** (`feature/health-endpoint`, in the `GamesCraftersUWAPI-health` worktree): `/health/` runs the four canaries through the providers in parallel with a 5 s limit and a 30 s cache, and reports per-solver `status`/`latencyMs`/`detail` (contract in DATA_FORMATS.md). `/games/health/` is removed from the public API; its idea moves to 5.4. Solver provider requests get a 60 s timeout (today a hung solver holds that request and its thread forever). Tests in `tests/test_health.py`. The branch must merge `master` first (it predates `stormyseas`).
+  - **UWAPI** (`feature/health-endpoint`, in the `GamesCraftersUWAPI-health` worktree): `/health/` runs the four canaries through the providers in parallel with a 50 s limit and a 30 s cache, and reports per-solver `status`/`latencyMs`/`detail` (contract in DATA_FORMATS.md). `/games/health/` is removed from the public API; its idea moves to 5.4. Solver provider requests get a 60 s timeout (today a hung solver holds that request and its thread forever). Tests in `tests/test_health.py`. The branch must merge `master` first (it predates `stormyseas`).
   - **Once deployed,** the prober can read `/universal/v1/health/` for better failure details than "got nothing". Until then the prober's own canaries are enough.
 - **5.4 Nightly golden-list run** across many games and variants to catch broken data for individual games.
 - **5.5 Incident notes** (a hand-written `incidents.json` shown on the page).
@@ -200,7 +200,7 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 ## 11. Verification checklist (before announcing)
 
 - [ ] GitHub runners reach nyc consistently (0.1).
-- [ ] A wrong canary shows `down` after 2 probes and recovers after 2 good ones (2.5).
+- [ ] A wrong canary shows `down` when the retry also fails and recovers on the next good run (2.5).
 - [ ] A dead host shows `down` with a clear reason (2.5).
 - [ ] A slow response shows `degraded` (fake server test, 1.4).
 - [ ] Skipped runs show gray, not red, and don't lower uptime (1.4, 2.4).

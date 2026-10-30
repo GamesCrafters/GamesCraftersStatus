@@ -37,9 +37,9 @@ The only place URLs, canaries and thresholds live.
 ```json
 {
   "baseUrl": "https://nyc.cs.berkeley.edu",
-  "timeoutMs": 10000,
-  "defaultDegradedMs": 2000,
-  "confirmAfter": 2,
+  "timeoutMs": 60000,
+  "defaultDegradedMs": 30000,
+  "retryDelaySeconds": 90,
   "groups": [
     { "id": "website", "name": "Website" },
     { "id": "api",     "name": "API" },
@@ -79,11 +79,11 @@ The only place URLs, canaries and thresholds live.
 | Situation | `detail` |
 |---|---|
 | pass | `ok` |
-| correct but slow | `ok, slow (2412 ms > 2000 ms)` |
+| correct but slow | `ok, slow (31412 ms > 30000 ms)` |
 | canary mismatch | `canary mismatch: expected win/7, got lose/3` (or `got nothing` when the fields are missing) |
 | content check failed | `marker missing`, `asset 404`, `empty instructions`, `only 12 games` |
 | HTTP error | `HTTP 502` |
-| no response | `<ErrorClass>`, e.g. `ConnectTimeout`, `ReadTimeout after 10000 ms`, `ConnectionError` |
+| no response | `<ErrorClass>`, e.g. `ConnectTimeout`, `ReadTimeout after 60000 ms`, `ConnectionError` |
 | bad body | `invalid JSON` |
 
 ## 2. Raw run file: `raw/YYYY-MM-DD/HHMMSS.json` (on `data`)
@@ -95,32 +95,47 @@ One file per probe run, named by the run's UTC start time. Kept 30 days, then de
   "schemaVersion": 1,
   "startedAt": "2026-10-29T19:05:12Z",
   "components": {
-    "frontend":       { "observed": "ok",       "confirmed": "ok", "latencyMs": 210,  "httpStatus": 200,  "detail": "ok" },
-    "api":            { "observed": "ok",       "confirmed": "ok", "latencyMs": 305,  "httpStatus": 200,  "detail": "ok" },
-    "instructions":   { "observed": "ok",       "confirmed": "ok", "latencyMs": 480,  "httpStatus": 200,  "detail": "ok" },
-    "solver-classic": { "observed": "ok",       "confirmed": "ok", "latencyMs": 142,  "httpStatus": 200,  "detail": "ok" },
-    "solver-one":     { "observed": "degraded", "confirmed": "ok", "latencyMs": 2412, "httpStatus": 200,  "detail": "ok, slow (2412 ms > 2000 ms)" },
-    "solver-puzzles": { "observed": "down",     "confirmed": "ok", "latencyMs": 95,   "httpStatus": 500,  "detail": "HTTP 500" },
-    "solver-py":      { "observed": "down",     "confirmed": "ok", "latencyMs": null, "httpStatus": null, "detail": "ReadTimeout after 10000 ms" }
+    "frontend":       { "status": "ok",       "latencyMs": 210,   "httpStatus": 200,  "detail": "ok" },
+    "api":            { "status": "ok",       "latencyMs": 305,   "httpStatus": 200,  "detail": "ok" },
+    "instructions":   { "status": "ok",       "latencyMs": 480,   "httpStatus": 200,  "detail": "ok" },
+    "solver-classic": { "status": "ok",       "latencyMs": 142,   "httpStatus": 200,  "detail": "ok" },
+    "solver-one":     { "status": "degraded", "latencyMs": 31412, "httpStatus": 200,  "detail": "ok, slow (31412 ms > 30000 ms)",
+                        "retried": true, "firstStatus": "degraded" },
+    "solver-puzzles": { "status": "ok",       "latencyMs": 120,   "httpStatus": 200,  "detail": "ok",
+                        "retried": true, "firstStatus": "down" },
+    "solver-py":      { "status": "down",     "latencyMs": null,  "httpStatus": null, "detail": "ReadTimeout after 60000 ms",
+                        "retried": true, "firstStatus": "down" }
   }
 }
 ```
 
 Fields per component:
 
-- `observed`: what this single probe saw.
-- `confirmed`: the state after the debounce rule. This is what the page and uptime use.
-- `latencyMs`: measured by the prober (for `frontend`, the sum of both requests). `null` if there was no response.
-- `httpStatus`: HTTP status, or `null` if there was no response.
-- `detail`: see the table above.
+- `status`: the final status of this run, after the retry rule below. This is what the page and uptime use.
+- `retried`: present and `true` only if the first check was not `ok` and the component was checked again.
+- `firstStatus`: present only with `retried`. What the first check saw, kept so blips stay visible in the raw data.
+- `latencyMs`, `httpStatus`, `detail`: from the check that decided `status` (the retry, if there was one). `latencyMs` is `null` if there was no response; for `frontend` it is the sum of both requests.
 
-**Debounce rule.** `confirmed` changes to a new status only after `confirmAfter` (2) consecutive probes observe that same new status. Until then `confirmed` stays as it was and `current.json` records the pending change. An observation equal to `confirmed` clears any pending change. (In the example, `solver-puzzles` and `solver-py` were each observed `down` once, so they are still confirmed `ok`.)
+**Retry rule.** The schedule is hourly, so a bad check is confirmed inside the same run instead of waiting for the next one:
 
-**First run:** with no previous `current.json`, the first observation is confirmed immediately.
+1. Run every check once, in parallel.
+2. If any component is not `ok`, wait `retryDelaySeconds` (90) and check **only those components** again.
+3. The retry result becomes `status`. In the example, `solver-puzzles` failed once but was fine on the retry, so it is recorded `ok` (with `firstStatus: "down"` for the record), while `solver-py` failed twice and is recorded `down`.
+
+| First check | Retry | `status` |
+|---|---|---|
+| ok | none | ok |
+| down or degraded | ok | ok |
+| down | down | down |
+| degraded | degraded | degraded |
+| down | degraded | degraded |
+| degraded | down | down |
+
+There is no state carried between runs for this: each run decides on its own. A skipped run just leaves a gap (shown gray).
 
 ## 3. `current.json` (on `data`, overwritten every run)
 
-Latest confirmed state plus everything the page needs to draw itself.
+Latest state plus everything the page needs to draw itself.
 
 ```json
 {
@@ -136,14 +151,13 @@ Latest confirmed state plus everything the page needs to draw itself.
     "solver-puzzles": {
       "name": "GamesmanPuzzles",
       "group": "solvers",
-      "status": "ok",
-      "since": "2026-10-10T03:20:00Z",
+      "status": "down",
+      "since": "2026-10-29T19:05:12Z",
       "lastCheckedAt": "2026-10-29T19:05:12Z",
       "latencyMs": 95,
       "detail": "HTTP 500",
-      "pending": { "status": "down", "count": 1, "firstSeen": "2026-10-29T19:05:12Z" },
       "lastFailure": { "at": "2026-10-29T19:05:12Z", "detail": "HTTP 500" },
-      "lastStateChange": { "at": "2026-10-10T03:20:00Z", "from": "down", "to": "ok" }
+      "lastStateChange": { "at": "2026-10-29T19:05:12Z", "from": "ok", "to": "down" }
     }
   }
 }
@@ -153,17 +167,16 @@ Latest confirmed state plus everything the page needs to draw itself.
 
 Fields:
 
-- `overall`: the worst confirmed `status` across all components.
+- `overall`: the worst `status` across all components.
 - `groups`: display order and membership.
-- `status`: the confirmed status. `since`: when this confirmed status began.
-- `pending`: `null`, or the new status seen and how many consecutive probes have seen it.
-- `lastFailure`: the most recent probe that **observed** `down` (or `null`), kept across runs so the page can show the last failure reason even for blips.
-- `lastStateChange`: the most recent confirmed transition (or `null`). Slack alerts (plan 5.1) fire exactly when this changes.
+- `status`: the current status (the last run's final `status`). `since`: when this status began.
+- `lastFailure`: the most recent check that saw `down` (or `null`), including first checks that passed on retry, kept across runs so the page can show the last failure reason even for blips.
+- `lastStateChange`: the most recent change of `status` (or `null`). Slack alerts (plan 5.1) fire exactly when this changes.
 - `detail` and `latencyMs`: from the most recent probe.
 
 ## 4. `daily.json` (on `data`)
 
-Per component, per UTC day, counting **confirmed** statuses.
+Per component, per UTC day, counting each run's final `status`.
 
 ```json
 {
@@ -171,8 +184,8 @@ Per component, per UTC day, counting **confirmed** statuses.
   "updatedAt": "2026-10-29T19:05:15Z",
   "components": {
     "api": {
-      "2026-10-28": { "checks": 288, "ok": 288, "degraded": 0, "down": 0, "avgLatencyMs": 301, "p95LatencyMs": 470, "worst": "ok" },
-      "2026-10-29": { "checks": 229, "ok": 226, "degraded": 2, "down": 1, "avgLatencyMs": 320, "p95LatencyMs": 610, "worst": "down" }
+      "2026-10-28": { "checks": 24, "ok": 24, "degraded": 0, "down": 0, "avgLatencyMs": 301, "p95LatencyMs": 470, "worst": "ok" },
+      "2026-10-29": { "checks": 19, "ok": 17, "degraded": 1, "down": 1, "avgLatencyMs": 320, "p95LatencyMs": 610, "worst": "down" }
     }
   }
 }
@@ -180,12 +193,12 @@ Per component, per UTC day, counting **confirmed** statuses.
 
 Rules:
 
-- `checks` = `ok` + `degraded` + `down`. A full day is 288 checks; fewer means GitHub skipped or delayed runs.
+- `checks` = `ok` + `degraded` + `down`. A full day is 24 checks (hourly); fewer means GitHub skipped or delayed runs. Retries do not add checks: each run counts once, with its final `status`.
 - **No data:** a missing day, or `checks: 0`, is drawn gray. Missed runs are never counted as `down`.
-- `worst`: the worst confirmed status that day. It sets the bar color: red if any confirmed `down`, else yellow if any confirmed `degraded`, else green.
+- `worst`: the worst status that day. It sets the bar color: red if any `down`, else yellow if any `degraded`, else green.
 - **Uptime %** over a window = `(ok + degraded) / checks`, summed over the days in the window, skipping days with no data. Degraded counts as up.
 - Latency stats ignore probes with no response.
-- **Recompute:** every probe run rebuilds **today's** entry from today's raw files, so today's bar is at most one run behind and self-heals after a failed run. Past days are never rewritten.
+- **Recompute:** every probe run rebuilds **today's** entry from today's raw files, so today's bar is at most one run (an hour) behind and self-heals after a failed run. Past days are never rewritten.
 - `daily.json` keeps every day (about 100 KB per year).
 
 ## 5. Health endpoints on nyc (plan step 5.3, not deployed yet)
@@ -210,7 +223,7 @@ The prober does not need these; once deployed they give better failure details.
 
 - `status` is only `ok` or `down`; the prober decides `degraded` from `latencyMs`.
 - Each backend: the solver's own `/health` must answer (any HTTP response), then the canary (same values as section 1) must match.
-- `detail`: `canary ok`, `canary mismatch: expected <value>/<remoteness>, got <value>/<remoteness>`, `canary returned no data`, `canary returned no moves`, `solver unreachable: <ErrorClass>`, `timeout after 5000 ms`, `check failed: <ErrorClass>`, `canary <game>/<variant> is not registered`.
+- `detail`: `canary ok`, `canary mismatch: expected <value>/<remoteness>, got <value>/<remoteness>`, `canary returned no data`, `canary returned no moves`, `solver unreachable: <ErrorClass>`, `timeout after 50000 ms`, `check failed: <ErrorClass>`, `canary <game>/<variant> is not registered`.
 
 **Solver `GET /health`** (localhost only, called by UWAPI): liveness only, always HTTP 200.
 
@@ -235,7 +248,8 @@ The probe and cleanup workflows share one `concurrency` group, so they never pus
 
 1. The prober decides `degraded` from its own thresholds.
 2. When nyc is unreachable, every component is `down` with its real reason. No `unknown` state.
-3. Bar color is the day's worst confirmed status. If that turns out too strict, switching to a downtime-percentage rule changes only the page's drawing, not the data.
+3. Bar color is the day's worst status. If that turns out too strict, switching to a downtime-percentage rule changes only the page's drawing, not the data.
 4. Every probe run recomputes today's `daily.json` entry; the separate job only cleans up raw files.
 5. Frontend markers, the instructions game and all four canaries are chosen and verified (section 1).
-6. *Later:* `recent.json` with the last 24 hours of per-probe latency.
+6. The prober runs **hourly** and confirms a bad check by re-checking it once, 90 s later, in the same run. This replaces the earlier rule of two consecutive scheduled runs (which at an hourly schedule would add an hour of delay).
+7. *Later:* `recent.json` with the last 24 hours of per-probe latency (more useful with a finer schedule).

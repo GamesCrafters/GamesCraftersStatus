@@ -1,158 +1,207 @@
-# GamesCrafters Status Page: Brainstorm and Rough Plan
+# GamesCrafters Status: Vision, Spec and Plan
 
-## Context
-GamesCrafters has no visibility into whether GamesmanUni and its solver backends are healthy. Problems (a solver process down, a corrupt or missing database) are found when a user hits them. We want an OpenAI-style status page: current state per component, plus daily history bars and uptime %.
+*Rewritten 2026-10-29, after nyc came back. Supersedes the September plan, which was written while nyc was unreachable. The data contract is in [DATA_FORMATS.md](DATA_FORMATS.md).*
 
-Decisions so far:
-- **Audience:** the GamesCrafters team (internal, so detail is welcome; but see the privacy caveat below).
-- **Approach:** fully custom, not Uptime Kuma or Upptime.
-- **Hosting:** the only machine is `nyc.cs.berkeley.edu`, and everything runs there, so the prober must run elsewhere. No budget, so **GitHub Actions** it is.
+## 1. Vision
 
-## Current architecture (from the repos)
-```
-GamesmanUni (Vue 3 SPA)
-   -> GamesCraftersUWAPI (Flask, systemd, :8082)   [server.py, games/gamesman_*.py]
-        -> GamesmanClassic :8083, GamesmanOne :8084, GamesmanPuzzles :9001, GamesmanPy :9004  (localhost only)
-        -> external: Explainers GitHub repo (instructions), Lichess
-```
-UWAPI reaches the solvers over localhost, so an external prober cannot probe them directly. UWAPI has to report on them.
+A **Status page inside GamesmanUni** at `https://nyc.cs.berkeley.edu/uni/status`, linked from the site header. Anyone on the team, and any curious user, can see at a glance:
 
-## Proposed design
-Three pieces:
+- whether the website, the API and each solver backend are working right now,
+- a 90-day history per component (one bar per day: green, yellow, red, or gray for no data),
+- uptime %, latency over time, and the reason for the last failure.
 
-1. **`/health` endpoint in UWAPI** (runs on nyc; the only change outside the new repo)
-   - Fans out to each solver on localhost and runs a **known-answer canary** per backend. Decision: **one tiny, stable game per solver**. Query the live API once, verify the answer by hand, and hardcode it as the expected value.
-     - Candidates seen in `games/__init__.py` (unverified): Classic `0to10by1or2`; Puzzles `sevenpennies`; Py `stormyseas`; One a small game such as `gobbletg`, `neutron` or `quixo` (pick the smallest/fastest). The start position's expected `positionValue` and `remoteness` must be confirmed against the live API.
-   - Returns JSON per component: `{status: ok|degraded|down, latency_ms, detail}`. `detail` is built server-side and sanitized: canary expected vs actual, error class, short truncated message. Full stack traces stay in nyc server logs.
-   - This catches the failure that matters for a solver project: HTTP 200 with missing or corrupt solved data.
-   - Public, no shared secret (the existing API is already public and unauthenticated, so a secret on `/health` alone would add little). Decision: **cache the result in memory in UWAPI for about 30 to 60 seconds** (store last result plus timestamp, reuse if recent) and keep canaries to one tiny query per backend. Repeated calls then cost the solvers nothing beyond one round of canaries per window. UWAPI has no caching or rate limiting today, so this is the first of either there. An optional token can be added later if abuse appears.
+The page looks like the rest of Uni: same header, same themes, same i18n. The checks run **outside** nyc (GitHub Actions), so an outage of nyc is recorded even though nyc can't report it.
 
-2. **Prober** (GitHub Actions cron, every 5 min)
-   - Known URLs: frontend `https://nyc.cs.berkeley.edu/uni/`, API `https://nyc.cs.berkeley.edu/universal/v1/` (from GamesmanUni's `defaultApp.ts`). Note UWAPI's provider classes swallow backend errors and return `{}`, so HTTP 200 alone proves nothing; the known-answer canary is essential.
-   - A Python script. Probes the public URLs the way real users do: the frontend page, UWAPI `/`, and `/health`. This also tests the proxy/TLS layer. Also probes external dependencies (Explainers repo, Lichess).
-   - Status rules (decided): down = no response, error, or wrong canary answer; degraded = correct but slower than a latency threshold (start around 3s, tune from real data). A component's state only changes after **2 consecutive probes** agree, so one network blip doesn't flip the page.
-   - Before building anything else, validate reachability: a throwaway workflow that curls the frontend and `/universal/v1/` from GitHub's runners, in case nyc or Berkeley blocks cloud IP ranges.
-   - The script is host-agnostic, so it can move to a VPS later if we ever need 1-minute checks.
+Later, Uni can use the same data to warn users in place ("GamesmanPuzzles is having trouble right now") on the pages that depend on a broken solver, and the team gets Slack alerts.
 
-3. **Status page** (static, GitHub Pages)
-   - Decided: plain HTML/JS with no build step, showing **90 days** of daily bars.
-   - Fully automatic, no manual updates: the page is a fixed file whose JS fetches `current.json` and `daily.json` from the data branch on load (and re-fetches about every minute while open) and draws everything from that data. Days with no data render gray, not green.
-   - Per component group: current state, daily green/yellow/red bars, uptime %.
-   - Extras: latency chart, last failure reason.
+### What it is not
+- Not a public SLA. GitHub's scheduler is best-effort, so the numbers are approximate.
+- Not per-game correctness testing. One canary per solver catches "solver down" and "solved data missing". A broad nightly golden-list run is a later phase.
+- Not monitoring for third-party services (Lichess) or for in-process UWAPI games (Nim, Kayles, ...).
 
-**Component groups:** Website (GamesmanUni), API (UWAPI), Solvers (Classic, One, Puzzles, Py), External (Explainers, Lichess).
+## 2. What changed from the September plan, and why
 
-## Repo: new public `GamesCraftersStatus` in the GamesCrafters org
-Why a new repo: it keeps the monitor's runs, commits and settings separate from the site it watches, and gives it its own clean Actions tab. Why public: public repos get unlimited free Actions minutes and free Pages; a private repo would exceed the 2,000 min/month free allowance (about 8,600 min/month at 5-minute runs).
+| September plan | New plan | Why |
+|---|---|---|
+| New `/health` endpoint in UWAPI runs the solver canaries | **The prober runs the canaries itself through the public API.** `/health` moves to a later, optional phase | Confirmed live: UWAPI already proxies every solver publicly (`/<game>/<variant>/positions/?p=...`). Probing through it tests the real user path (nginx, UWAPI, solver, database) and needs **zero changes or deploys on nyc** to ship v1. |
+| Standalone status site on GitHub Pages | **A `/status` page in GamesmanUni** is the main surface, plus a tiny fallback page on GitHub Pages | The goal is to have it live on Uni. The fallback covers the one case Uni can't: nyc itself being down. |
+| Canary values unverified | **Verified against the live API on 2026-10-29** (section 4) | nyc is back. |
+| Build the page first, then collect data | **Start collecting data early, build the page against real history** | History bars need history. Turning the prober on weeks before the page ships means the page launches with real data instead of 90 gray bars. |
+
+Kept from before: GitHub Actions on a public repo, JSON files on a `data` branch (no database), the 2-probe debounce, degraded = correct but slow, gray = no data (never counted as down), and the decisions already recorded in DATA_FORMATS.md.
+
+## 3. Architecture
 
 ```
-GamesCraftersStatus/
-├─ .github/workflows/probe.yml   # cron */5, runs the prober, commits results to `data` branch
-├─ .github/workflows/rollup.yml  # daily: compact raw results into daily summaries (or fold into probe.yml)
-├─ prober/                       # Python script and component/canary config
-└─ site/                         # static status page (Pages)
+ GitHub Actions (every 5 min)          nyc.cs.berkeley.edu (unchanged for v1)
+ ┌──────────────────────────┐          ┌───────────────────────────────────────────┐
+ │ prober (Python)          │─ HTTPS ─▶│ nginx                                     │
+ │  - GET /uni/ + its JS    │          │  ├─ /uni/        GamesmanUni (static SPA)  │
+ │  - GET /universal/v1/    │          │  └─ /universal/v1/  UWAPI (Flask :8082)    │
+ │  - 4 solver canaries     │          │        ├─ GamesmanClassic  :8083           │
+ │  - 1 instructions check  │          │        ├─ GamesmanOne      :8084           │
+ │ debounce, write JSON     │          │        ├─ GamesmanPuzzles  :9001           │
+ └────────────┬─────────────┘          │        ├─ GamesmanPy       :9004           │
+              │ git push               │        └─ Explainers repo (instructions)   │
+              ▼                        └───────────────────────────────────────────┘
+ GamesCraftersStatus repo, `data` branch
+   current.json, daily.json, raw/...
+              │  fetched by the browser from raw.githubusercontent.com
+              │  (CORS: *, cache max-age=300, both confirmed)
+      ┌───────┴─────────────────────────┐
+      ▼                                 ▼
+ Uni /status page (main)        Fallback page on GitHub Pages
+ (Vue, in GamesmanUni)          (plain HTML, works when nyc is down)
 ```
-Branches: `main` holds code and the site. `data` holds results only, so `main` history stays clean.
 
-## Storage (no database server)
-Results are plain JSON files committed to the `data` branch. There is no database to run, deploy or pay for. The workflow file is the entire deployment, and public-repo storage is free.
+Three repos are involved:
+- **GamesCraftersStatus** (new, public, GamesCrafters org): prober, workflows, the `data` branch, the fallback page.
+- **GamesmanUni**: the `/status` page and header link.
+- **GamesCraftersUWAPI**: no change for v1. Later: `/health` and request timeouts (section 10).
 
-What is stored:
-- **Raw checks:** one small file per run, e.g. `raw/2026-09-18/1205.json`, containing for each component `{status, latency_ms, sanitized detail}`. Roughly 10 components, about 1 KB per run.
-- **Daily rollups:** `daily.json`, per component per day: number of checks, ok/degraded/down counts, avg and p95 latency, worst status. This drives the history bars and uptime %.
-- **`current.json`:** latest status per component, overwritten each run.
-- **Incidents (later):** `incidents.json`.
+## 4. Components and checks
 
-Compaction: raw files are kept for a rolling window (about 30 days), then the rollup job folds them into `daily.json` and deletes them. `daily.json` grows only about 10 rows a day, so it stays tiny for years. Occasionally squash the `data` branch history if the repo grows.
+Seven components, in three groups. Ids are permanent.
 
-The page reads `current.json` and `daily.json` directly from `raw.githubusercontent.com` (CORS allows it; expect up to about 5 minutes of CDN caching), so Pages doesn't need to redeploy on every run.
+| id | Group | Display name | Check (all GETs, 10 s timeout) | ok when |
+|---|---|---|---|---|
+| `frontend` | Website | GamesmanUni | `/uni/`, then the main `/uni/assets/index.*.js` it references | both 200; HTML contains `<title>GamesmanUni</title>` and `id="app"` |
+| `api` | API | Universal Web API | `/universal/v1/` | 200, JSON list with at least 50 games (112 today) |
+| `instructions` | API | Game instructions | `/universal/v1/0to10by1or2/regular/instructions/?locale=en` | 200 and `instructions` starts with `# 0 to 10 by 1 or 2` (UWAPI returns `""` on any failure, so 200 alone proves nothing) |
+| `solver-classic` | Solvers | GamesmanClassic | canary below | value and remoteness match, `moves` non-empty |
+| `solver-one` | Solvers | GamesmanOne | canary below | same |
+| `solver-puzzles` | Solvers | GamesmanPuzzles | canary below | same |
+| `solver-py` | Solvers | GamesmanPy | canary below | same |
 
-When we'd outgrow this: 1-minute checks, per-game analytics or ad-hoc queries. Then move to SQLite on a VPS or a free-tier hosted DB. Not needed now.
+**Canaries** (verified live 2026-10-29; all answered in 40–150 ms from Berkeley):
 
-## Mitigations for running scheduled workflows for years
-- **Actions list flooding:** a dedicated repo with one probe workflow. Logs and artifacts expire after 90 days by default. Old runs can be bulk-deleted with `gh run delete` or a cleanup workflow if desired.
-- **Commit noise and repo growth:** data goes on a separate `data` branch, raw files are compacted daily, and the branch can be squashed occasionally.
-- **Best-effort scheduling:** GitHub may delay or skip cron runs. Treat missing intervals as "no data" in the rollup, not as "down", and don't promise exact uptime numbers.
-- **60-day auto-disable:** GitHub disables scheduled workflows in public repos after 60 days of no repo activity. The prober's data commits should count as activity, but verify it. Add a safeguard, such as a monthly keepalive commit or a check that alerts if the last probe is older than X.
-- **Org setup:** an org admin may need to enable Actions and Pages for the repo.
+| Solver | Game / variant | Position `p` | Expected | Notes |
+|---|---|---|---|---|
+| Classic | `0to10by1or2/regular` | `1_0` | `win`, remoteness 7 | Verified by hand: P-positions are 1, 4, 7, 10, so 0→1→…→10 takes 7 moves. |
+| One | `quixo/3x3` | `1_---------` | `win`, remoteness 7 | Smallest GamesmanOne game. |
+| Puzzles | `sevenpennies/regular` | `00000000_9` | `win`, remoteness 14 | |
+| Py | `stormyseas/beg1` | `oowowwwowowwwooowrwowpwwRwwoPwwwowo7` | `win`, remoteness 3 | |
 
-## Privacy and detail
-The repo is public, so the `data` branch, the Pages site and the workflow logs are all publicly readable. That is acceptable: all GamesCrafters repos are already public, so paths, ports and service wiring are not secrets.
-- Each probe records team-useful detail: status, latency, HTTP status code, canary expected vs actual, error class plus a short truncated message.
-- Sanitize at the source: `/health` builds the detail string. Full stack traces stay in nyc server logs only.
-- Never record credentials, tokens, environment values, request headers, client IPs or user data.
-- The prober never prints raw response bodies to workflow logs.
+URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. Canaries live in the prober config, not in code, so they can be changed without touching logic. If a canary game is ever removed or re-solved on purpose, update the config in the same PR.
 
-## Separate follow-ups (not part of the status page)
-- Rate limiting on the public UWAPI. None exists in the repo; check whether nyc has a reverse proxy (e.g. nginx) with limits, since that config isn't in the repos.
-- `server.py` ends with `app.run(port=8082)` (Flask dev server) and the systemd service runs it directly, although `waitress` is in requirements.txt. Worth checking whether a production server should be used.
+**Load on nyc:** 7 to 8 small GETs every 5 minutes, about 2,300 a day. Negligible.
 
-## Later phases
-- **Alerts (decided: none in v1; Slack is a definite later addition):** Slack webhook on state change (down/degraded/recovered), reusing the 2-consecutive-probe rule so one failed probe doesn't alert anyone. Webhook URL stored as a GitHub Actions secret. Add a dead-man check: alert if no probe has run in a while. Design the prober so state changes are already detected and recorded in v1, so adding the Slack call later is a small change.
-- **Nightly golden-list run:** many `(game, variant, position, expected value, remoteness)` cases across games, to flag `unsolved` or wrong results. This catches broken data for one game that the single canary misses.
-- **Incidents:** a simple file-based incident log shown on the page.
+## 5. Status rules
 
-## Phases and steps (rollout decided: phased, test before announcing)
-We work one step at a time, and nothing outward-facing (creating the org repo, pushing, deploying to nyc, enabling schedules) happens without an explicit go-ahead. Current situation: nyc is completely unreachable (DNS resolves to 128.32.153.232 but ports 22, 80 and 443 all time out), so Phase A is done first because it needs no server.
+- **down:** no response, timeout (10 s), non-2xx, unparseable body, or a wrong answer (canary mismatch, empty instructions, missing marker).
+- **degraded:** the answer is correct but latency is above the component's threshold. Starting threshold is **2,000 ms** for every component (observed latency is 40–300 ms). Tune after burn-in.
+- **ok:** otherwise.
+- **Debounce:** the confirmed status changes only after **2 consecutive probes** agree on the new status, so an outage is confirmed in 5–10 minutes. Details in DATA_FORMATS.md.
+- **No data is never down.** Skipped or delayed GitHub runs show as gray and are left out of uptime.
+- **If nyc is entirely unreachable,** every component is `down` with its own real reason (e.g. `ConnectTimeout`). No separate "unknown" state.
+- **overall** = the worst confirmed status of any component.
 
-### Phase A: build locally, no nyc needed
-Everything here is developed and tested locally with fake data. Nothing is pushed or deployed.
+## 6. The Uni `/status` page (main surface)
 
-- **A1. Define the data contracts** (the shared format for prober, rollup and page). Write example JSON and a short spec for:
-  - the `/health` response: per component `{status, latency_ms, detail}`
-  - a raw run file `raw/<date>/<HHMM>.json`
-  - `current.json` (latest state per component, plus the pending "1 of 2" state for the debounce)
-  - `daily.json` (per component per day: counts of ok/degraded/down, avg and p95 latency, worst status)
-  - Done when: all four shapes are written down with examples and everyone agrees on field names and on UTC as the day boundary.
-- **A2. Scaffold the status repo locally** in the layout from the "Repo" section (`prober/`, `site/`, `.github/workflows/`), as a local git repo only. Done when: the folder structure exists, with a README explaining the pieces.
-- **A3. Write the prober script** (Python, config-driven).
-  - Config file lists each component: URL, check type (liveness or canary), expected answer, latency threshold. Canary expected values are placeholders until Phase B.
-  - Probes with a timeout, measures latency, assigns ok/degraded/down.
-  - Applies the 2-consecutive-probe rule using the previous `current.json`.
-  - Writes the raw run file and updates `current.json`. Never prints raw response bodies.
-  - Test 1: point it at the real, currently dead nyc and confirm it records `down` correctly (a free failure-path test).
-  - Test 2: point it at a small local fake server that returns ok, slow, wrong-answer and error, and confirm each maps to the right status and the debounce works.
-  - Done when: both tests pass.
-- **A4. Write the rollup/compaction job.** Folds raw files into `daily.json`, deletes raw files older than about 30 days, treats missing intervals as "no data". Test with generated fake data spanning more than 30 days, including gaps. Done when: `daily.json` matches hand-computed numbers and old raw files are removed.
-- **A5. Build the static status page** (plain HTML/JS, no build step) against sample JSON.
-  - Overall banner, component groups, current state, 90 daily bars (gray for no data), uptime %, latency chart, last failure reason.
-  - Re-fetches the JSON about every minute; must work at phone width.
-  - Test with sample data covering all-green, an outage, a degraded day, missing days, and a long outage.
-  - Done when: it renders correctly for all those cases in a browser.
-- **A6. Write the workflows** (`probe.yml` on `*/5`, `rollup.yml` daily, with a `concurrency` group, shallow checkout of the `data` branch, pushing to `data`), kept unpushed and unscheduled. Done when: the YAML is reviewed and lint-clean.
-- **A7. Write `/health` in a local UWAPI branch** (in GamesCraftersUWAPI): the route, per-backend canary calls through the existing provider classes, the sanitized `detail` string, 30 to 60 second in-memory caching, and a per-backend timeout so one hung solver can't hang the endpoint. Test with mocked providers only. Done when: unit-style tests cover ok, slow, wrong answer, error and cache-hit cases.
+### Route and navigation
+- Route `/status` → `TheStatusPage.vue` in `src/components/views/`. It must be declared **before** the `/:type` catch-all in `routes.ts` (otherwise `/status` is read as a game type). nginx already serves the SPA for unknown paths: `/uni/status` returns 200 today.
+- Header link "Status" in `AppHeaderNavigations.vue`, with a small colored dot for `overall` (a later step; v1 can ship with a plain link).
+- All strings go through vue-i18n like the rest of the header.
 
-### Phase B: needs nyc back up
-- **B1. Confirm nyc is reachable** again (someone with access restores the machine). Re-run my curl and port checks from this machine.
-- **B2. Reachability from GitHub.** Throwaway workflow in a personal public repo curls `/uni/` and `/universal/v1/` from GitHub's runners, run a few times at different hours. Done when: consistent HTTP 200. If it fails, stop and rethink where the prober runs.
-- **B3. Verify canary values.** Read-only GETs against the live API for the chosen game per solver. Confirm the start position's `positionValue` and `remoteness` by hand, then fill them into the prober config and the `/health` code. Done when: all four solvers have a verified canary.
-- **B4. Test `/health` for real** on a local or dev UWAPI run against the live solvers, including stopping one solver to confirm `down`. Then, with go-ahead and someone with nyc access, deploy the change (systemd service restart) and confirm `/universal/v1/health` responds and caches.
-- **B5. Point the prober at the real `/health`** and run it locally end to end (prober, rollup, page) against live data.
+### Layout (top to bottom)
+1. **Overall banner:** "All systems operational" / "Some systems degraded" / "Partial outage", plus "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 30 minutes old, show "Status data may be stale".
+2. **Groups** (Website, API, Solvers), each with its components. Per component:
+   - name, current status pill, "since <relative time>",
+   - 90 daily bars (oldest left, today right) colored by the day's worst confirmed status, gray for no data. Hover or tap shows the date, uptime % and counts.
+   - "99.8% uptime (90 days)",
+   - expandable details: latency now, last failure time and reason, a pending change if there is one ("1 of 2 probes saw down").
+3. **Latency chart:** daily p95 per component over 90 days (solvers on one chart is fine).
+4. **Footer note:** "Checked every 5 minutes from GitHub Actions. Times are UTC. Gray means no data." Link to the fallback page and the repo.
 
-### Phase C: go live quietly
-- **C1. Create the public `GamesCraftersStatus` repo** in the GamesCrafters org (needs the repo name decision and org admin to enable Actions and Pages). Push `main`, create the `data` branch, enable Pages.
-- **C2. Turn on the schedule.** Push the workflows, run `probe.yml` manually once, confirm a raw file and `current.json` land on `data`, then let the cron run.
-- **C3. Verification checklist** (see the Verification section): induced failures, slow response, nyc-unreachable outage, rollup correctness, schedule stays alive.
-- **C4. Quiet burn-in, about one week.** Check accuracy, watch for false alarms or flapping, tune the latency threshold from real timings, confirm the schedule keeps running and data volume matches expectations.
-- **C5. Announce.** Share the link with the team and add it to the GamesmanUni README next to the existing shields.io site-status badge.
+### Behavior
+- Fetches `current.json` and `daily.json` from `https://raw.githubusercontent.com/GamesCrafters/GamesCraftersStatus/data/` on mount, re-fetches every 60 s while the page is visible, and stops when hidden.
+- If the fetch fails, keep the last data and show "Couldn't refresh status" (never a blank page).
+- Reads `schemaVersion`. If it is higher than the page knows, show a soft warning and render what it can.
+- Uses Uni's theme CSS variables (`--gu-*`) so it works in all 11 themes. Status colors come from one small palette checked for contrast in light and dark themes, and status is never shown by color alone (pill text, tooltip text).
+- Works at phone width: bars shrink to 30 days below about 600 px.
+- No new dependencies. The bars and the latency chart are plain SVG.
+- PWA note: Uni's service worker has no runtime caching for cross-origin requests, so status data is always fetched fresh. Returning visitors may still get the Uni shell from the service-worker cache during an nyc outage, but first-time visitors won't, which is why the fallback page exists.
 
-### Phase D: later
-- **D1. Keepalive and dead-man check.** Monthly keepalive commit and a check for a stale `current.json` (no probe in a long time).
-- **D2. Slack alerts.** Webhook on state changes (down, degraded, recovered), webhook URL in GitHub Actions secrets, reusing the state-change detection already built into the prober.
-- **D3. Nightly golden-list run** across many games and variants.
-- **D4. Incident log** shown on the page.
-- **Separate from the status page:** rate limiting on the public UWAPI, and the `app.run` vs `waitress` question.
+### Fallback page (GitHub Pages, in this repo)
+One plain HTML file in `site/` that renders the overall banner and the current status of each component from `current.json`, with "Last checked" time. No history bars. It must work with nyc down. It is linked from the Uni page's footer and pinned in the team's channel.
 
-## Open questions
-- Who is on point for `/health` in UWAPI, and who owns the status repo long term? (Canary choice is decided; the exact expected values are verified during phase 1.)
-- Repo name and Pages URL (org Pages, or a subdomain later)?
-- Confirm the team is fine with a public status page that includes sanitized per-probe detail (all repos are already public).
-- (Later, for the Slack alerts phase) Which Slack channel and who creates the webhook?
+## 7. Data and storage
 
-## Verification (once built)
-- Kill a solver process on a dev/nyc instance, confirm `/health` marks it `down` and the page turns red within one or two probe intervals.
-- Point a canary at a wrong expected value, confirm it reports `down` even though HTTP is 200.
-- Add an artificial delay, confirm `degraded`.
-- Make nyc unreachable, confirm the page still loads and shows the outage.
-- Run the rollup on sample data and confirm raw files are compacted and `daily.json` is correct.
-- Leave the repo untouched for a while (or simulate) and confirm the schedule stays enabled.
+The data contract is in [DATA_FORMATS.md](DATA_FORMATS.md). In short:
+- `data` branch: `raw/YYYY-MM-DD/HHMMSS.json` (one per run, kept 30 days), `current.json` (latest state, overwritten), `daily.json` (per component per UTC day; today's entry recomputed every run).
+- `main` branch: code, config, workflows, fallback page.
+- The browser reads `data` through raw.githubusercontent.com (up to 5 min of CDN caching, so the page is at most about 10 minutes behind reality).
+
+## 8. Operations
+
+- **Workflows:** `probe.yml` (cron `*/5`, plus manual trigger) and `cleanup.yml` (daily, deletes raw files older than 30 days). Both use the same `concurrency` group so they never push at the same time. Pushes retry with `git pull --rebase`.
+- **Repo:** public, so Actions minutes are free (about 8,600 min/month at 5-minute runs would exceed a private repo's allowance).
+- **60-day auto-disable:** GitHub disables cron in public repos after 60 days without repo activity. Data commits should count. Verify during burn-in, and add a monthly keepalive as a safety net.
+- **Data branch growth:** about 300 small commits a day. Squash the `data` branch history yearly if clone size matters (the page only reads the latest files).
+- **Privacy:** everything in the repo, logs and data is public. Store only status, latency, HTTP code and short sanitized details (expected vs. got, error class). Never response bodies, headers, IPs or secrets. The prober never prints response bodies.
+- **Ownership:** a named owner for the Status repo and one for the Uni page (open question 1).
+
+## 9. Plan
+
+Work goes one step at a time. Every **[GO]** step is outward-facing (creates a repo, pushes, enables a schedule, deploys to nyc) and waits for an explicit go-ahead. Everything else is local.
+
+### Phase 0: Prove the riskiest assumption (about 1 day)
+- **0.1 [GO] Reachability from GitHub runners.** A throwaway `workflow_dispatch` workflow in a personal public repo that curls `/uni/`, `/universal/v1/` and one canary URL and prints only status code and timing. Run it 3–4 times at different hours. **Done when:** consistently 200. **If it fails** (Berkeley blocking cloud IPs), stop and rethink where the prober runs (options: a team member's always-on machine, a free-tier VM, or the `/health` endpoint with a push model).
+
+### Phase 1: Prober, locally against live nyc (about 1 week)
+- **1.1 Finalize DATA_FORMATS.md** (drop the DRAFT label). Done when the team agrees on it.
+- **1.2 Prober config** `prober/config.json`: the components, URLs, canaries, thresholds and groups from section 4.
+- **1.3 Prober script** `prober/probe.py` (Python 3, `requests` only). Runs all checks in parallel with timeouts, applies the status rules and the debounce against the previous `current.json`, writes the raw file, `current.json` and today's `daily.json` entry. Takes a `--data-dir` argument so it runs against a local folder.
+- **1.4 Tests** (`pytest`, a local fake server): ok, slow (degraded), wrong canary, empty instructions, 500, timeout, connection refused; debounce (one blip doesn't flip, two do); `since`/`pending`/`lastFailure` bookkeeping; daily recompute including gaps; UTC day rollover.
+- **1.5 Live run:** run the prober locally against real nyc for a few hours (a loop every 5 minutes) and check that the files look right and nothing reports `down` falsely.
+- **1.6 Cleanup script** `prober/cleanup.py` (delete raw days older than 30) with a test.
+- **Done when:** tests pass and a live local run produces correct files.
+
+### Phase 2: Go live, collecting data only (about 1–2 weeks of burn-in)
+- **2.1 Workflows** `probe.yml` and `cleanup.yml`, linted, reviewed.
+- **2.2 [GO] Create `GamesCrafters/GamesCraftersStatus`** (public; an org admin may need to enable Actions). Push `main`, create the `data` branch.
+- **2.3 [GO] Turn on the schedule.** Trigger once manually, confirm files land on `data`, then let the cron run.
+- **2.4 Burn-in.** Watch for false alarms and flapping, measure real GitHub-to-nyc latency and set thresholds, measure how often GitHub skips runs, confirm the schedule stays enabled.
+- **2.5 Induced-failure checks** that need no nyc access: point one canary at a wrong expected value in a branch run, and point one URL at a dead host. Confirm `down` after 2 probes and recovery after 2 more.
+- **Done when:** a week of data with no false `down` and thresholds tuned.
+
+### Phase 3: Uni `/status` page (about 1–2 weeks, overlaps with burn-in)
+- **3.1** Branch in GamesmanUni (see open question 3 for the base branch). Add the route, `TheStatusPage.vue`, a small `statusApi.ts` fetcher, the i18n strings and the header link.
+- **3.2** Build it against the live `data` branch, plus a local fixture set covering: all green, a confirmed outage, a degraded day, gray days, a long outage, stale data, and fetch failure.
+- **3.3** Check all themes, phone width, and keyboard/screen-reader basics (pills have text, bars have labels).
+- **3.4 Fallback page** in `site/` of the Status repo.
+- **Done when:** `yarn build` passes, every fixture renders correctly, and the team has reviewed it locally (`yarn preview`).
+
+### Phase 4: Ship on Uni
+- **4.1 [GO]** Open a PR to GamesmanUni, get review, merge.
+- **4.2 [GO] Deploy** to nyc the usual way (`yarn build`, copy `dist` to the server; needs whoever does Uni deploys). Confirm `https://nyc.cs.berkeley.edu/uni/status` works.
+- **4.3 [GO]** Enable GitHub Pages for the fallback page.
+- **4.4** Announce to the team, and add a status badge or link to the GamesmanUni README.
+
+### Phase 5: Later (each independent, in suggested order)
+- **5.1 Slack alerts** on confirmed state changes (down, degraded, recovered), webhook in an Actions secret, plus a dead-man alert if `current.json` is older than 30 minutes.
+- **5.2 Header status dot** and **in-context warnings** in Uni: a small banner on game pages whose solver is currently down.
+- **5.3 UWAPI hardening:** add `timeout=` to the providers' `requests.get` calls (today they have none, so one hung solver can hang UWAPI workers), and an optional `/health` endpoint that reports the real error class (the public API swallows errors into `{}`, so the prober can only say "mismatch").
+- **5.4 Nightly golden-list run** across many games and variants to catch broken data for individual games.
+- **5.5 Incident notes** (a hand-written `incidents.json` shown on the page).
+- **5.6** `recent.json` with the last 24 h of per-probe latency for a finer chart.
+
+## 10. Open questions
+
+1. **Owners:** who owns the Status repo and the prober long term, and who reviews and deploys the Uni change?
+2. **Org repo:** is the name `GamesCraftersStatus` OK, and which org admin enables Actions and Pages?
+3. **Uni base branch:** the `/status` page should be built on `main` (what's deployed) or on `ui-update` (the redesign in progress, which introduces the `--gu-*` theme variables)? This affects styling and when it can ship.
+4. **Public detail:** is the team fine with failure details (e.g. "canary mismatch: expected win/7, got nothing") being public? All repos are already public, so I'd say yes.
+5. **Slack (Phase 5):** which channel, and who creates the webhook?
+
+## 11. Verification checklist (before announcing)
+
+- [ ] GitHub runners reach nyc consistently (0.1).
+- [ ] A wrong canary shows `down` after 2 probes and recovers after 2 good ones (2.5).
+- [ ] A dead host shows `down` with a clear reason (2.5).
+- [ ] A slow response shows `degraded` (fake server test, 1.4).
+- [ ] Skipped runs show gray, not red, and don't lower uptime (1.4, 2.4).
+- [ ] `daily.json` matches hand-computed numbers for a fixture day (1.4).
+- [ ] The schedule stayed enabled for the whole burn-in (2.4).
+- [ ] `/uni/status` renders in all themes and at phone width, and survives a failed fetch (3.2, 3.3).
+- [ ] The fallback page loads and shows status with nyc unreachable (simulate by pointing it at fixture data).

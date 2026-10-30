@@ -3,81 +3,81 @@
   "components": {
     "frontend": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 528,
+        "avgLatencyMs": 464,
         "p95LatencyMs": 528,
         "worst": "ok"
       }
     },
     "api": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 287,
+        "avgLatencyMs": 180,
         "p95LatencyMs": 287,
         "worst": "ok"
       }
     },
     "instructions": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 286,
-        "p95LatencyMs": 286,
+        "avgLatencyMs": 314,
+        "p95LatencyMs": 341,
         "worst": "ok"
       }
     },
     "solver-classic": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 140,
-        "p95LatencyMs": 140,
+        "avgLatencyMs": 230,
+        "p95LatencyMs": 321,
         "worst": "ok"
       }
     },
     "solver-one": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 215,
-        "p95LatencyMs": 215,
+        "avgLatencyMs": 278,
+        "p95LatencyMs": 342,
         "worst": "ok"
       }
     },
     "solver-puzzles": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 103,
+        "avgLatencyMs": 96,
         "p95LatencyMs": 103,
         "worst": "ok"
       }
     },
     "solver-py": {
       "2026-10-30": {
-        "checks": 1,
-        "ok": 1,
+        "checks": 2,
+        "ok": 2,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 137,
+        "avgLatencyMs": 116,
         "p95LatencyMs": 137,
         "worst": "ok"
       }
     }
   },
-  "updatedAt": "2026-10-30T06:26:39Z"
+  "updatedAt": "2026-10-30T14:11:03Z"
 }

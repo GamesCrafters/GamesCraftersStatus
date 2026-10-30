@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-30T06:26:39Z",
+  "overall": "ok",
+  "groups": [
+    {
+      "id": "website",
+      "name": "Website",
+      "components": [
+        "frontend"
+      ]
+    },
+    {
+      "id": "api",
+      "name": "API",
+      "components": [
+        "api",
+        "instructions"
+      ]
+    },
+    {
+      "id": "solvers",
+      "name": "Solvers",
+      "components": [
+        "solver-classic",
+        "solver-one",
+        "solver-puzzles",
+        "solver-py"
+      ]
+    }
+  ],
+  "components": {
+    "frontend": {
+      "name": "GamesmanUni",
+      "group": "website",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:38Z",
+      "latencyMs": 528,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "api": {
+      "name": "Universal Web API",
+      "group": "api",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:38Z",
+      "latencyMs": 287,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "instructions": {
+      "name": "Game instructions",
+      "group": "api",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:38Z",
+      "latencyMs": 286,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "solver-classic": {
+      "name": "GamesmanClassic",
+      "group": "solvers",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:38Z",
+      "latencyMs": 140,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "solver-one": {
+      "name": "GamesmanOne",
+      "group": "solvers",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:39Z",
+      "latencyMs": 215,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "solver-puzzles": {
+      "name": "GamesmanPuzzles",
+      "group": "solvers",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:39Z",
+      "latencyMs": 103,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    },
+    "solver-py": {
+      "name": "GamesmanPy",
+      "group": "solvers",
+      "status": "ok",
+      "since": "2026-10-30T06:26:37Z",
+      "lastCheckedAt": "2026-10-30T06:26:39Z",
+      "latencyMs": 137,
+      "detail": "ok",
+      "lastFailure": null,
+      "lastStateChange": null
+    }
+  }
+}

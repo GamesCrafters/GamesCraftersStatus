@@ -246,7 +246,7 @@ GamesmanClassic adds `"gameProcesses": 3` (game processes currently running; the
 | `daily.json` (today's entry) | prober | every run |
 | deletion of raw days older than 30 | cleanup job | daily |
 
-The probe and cleanup workflows share one `concurrency` group, so they never push at the same time. Pushes retry with `git pull --rebase`.
+The probe and cleanup workflows share one `concurrency` group, so they never push at the same time. If a push is rejected because the branch moved, the run rebases and retries (3 attempts); if the rebase conflicts (someone else changed `current.json` or `daily.json` in the meantime), the run fails instead of overwriting, and the next run repairs today's numbers from the raw files. The git steps live in `.github/scripts/data-branch.sh`.
 
 ## Decisions (all settled)
 

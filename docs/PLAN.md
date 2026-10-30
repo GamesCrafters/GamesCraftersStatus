@@ -134,7 +134,7 @@ The data contract is in [DATA_FORMATS.md](DATA_FORMATS.md). In short:
 
 ## 8. Operations
 
-- **Workflows:** `probe.yml` (cron `7 * * * *`, hourly at 7 past, plus manual trigger; avoiding the top of the hour, when GitHub is busiest) and `cleanup.yml` (daily, deletes raw files older than 30 days). Both use the same `concurrency` group so they never push at the same time. Pushes retry with `git pull --rebase`.
+- **Workflows:** `probe.yml` (cron `17 * * * *`, hourly at :17, plus manual trigger; off the top of the hour, when GitHub's scheduler is busiest and runs are more often late or skipped) and `cleanup.yml` (daily at 03:17 UTC, deletes raw files older than 30 days). Both use the same `concurrency` group so they never push at the same time. Pushes retry with `git pull --rebase`.
 - **Repo:** public, so Actions minutes are free (a private repo would use its free minutes up faster).
 - **60-day auto-disable:** GitHub disables cron in public repos after 60 days without repo activity. Data commits should count. Verify during burn-in, and add a monthly keepalive as a safety net.
 - **Data branch growth:** about 300 small commits a day. Squash the `data` branch history yearly if clone size matters (the page only reads the latest files).
@@ -158,8 +158,9 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 - **Done when:** tests pass and a live local run produces correct files.
 
 ### Phase 2: Go live, collecting data only (about 1–2 weeks of burn-in)
-- **2.1 Workflows** `probe.yml` and `cleanup.yml`, linted, reviewed.
-- **2.2 [GO] Create `GamesCrafters/GamesCraftersStatus`** (public; an org admin may need to enable Actions). Push `main`, create the `data` branch.
+- **2.1 Workflows** `probe.yml` and `cleanup.yml`, linted, reviewed. *Written 2026-10-29;* the shared git steps are in `.github/scripts/data-branch.sh` and were tested locally against a stand-in remote (first run, existing branch, concurrent push, conflict, unreachable remote, no-op, cleanup).
+- **2.1b [GO] Sandbox test:** push the repo to a personal sandbox repo and run both workflows by hand a few times, to test what only GitHub can (permissions, pushing with the Actions token, action versions). Then delete the sandbox.
+- **2.2 [GO] Create `GamesCrafters/GamesCraftersStatus`** (public; Nahee creates it). Push `main`, create the `data` branch.
 - **2.3 [GO] Turn on the schedule.** Trigger once manually, confirm files land on `data`, then let the cron run.
 - **2.4 Burn-in.** Watch for false alarms and flapping, measure real GitHub-to-nyc latency and set thresholds, measure how often GitHub skips runs, confirm the schedule stays enabled.
 - **2.5 Induced-failure checks** that need no nyc access: point one canary at a wrong expected value in a branch run, and point one URL at a dead host. Confirm `down` when the retry also fails, and recovery on the next good run.
@@ -191,10 +192,10 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 
 ## 10. Open questions
 
-1. **Owners:** who owns the Status repo and the prober long term, and who reviews and deploys the Uni change?
-2. **Org repo:** is the name `GamesCraftersStatus` OK, and which org admin enables Actions and Pages?
+1. **Owners:** *Answered 2026-10-29:* Nahee develops and maintains the Status repo and prober. Still open: who reviews and deploys the Uni change.
+2. **Org repo:** *Answered 2026-10-29:* the name is `GamesCraftersStatus` in the GamesCrafters org, and Nahee can create it.
 3. **Uni base branch:** the `/status` page should be built on `main` (what's deployed) or on `ui-update` (the redesign in progress, which introduces the `--gu-*` theme variables)? This affects styling and when it can ship.
-4. **Public detail:** is the team fine with failure details (e.g. "canary mismatch: expected win/7, got nothing") being public? All repos are already public, so I'd say yes.
+4. **Public detail:** *Answered 2026-10-29:* yes, as long as raw failure details are never output. The prober already guarantees this: no response bodies or raw error text, only fixed short messages, HTTP codes, error-type names and filtered values.
 5. **Slack (Phase 5):** which channel, and who creates the webhook?
 
 ## 11. Verification checklist (before announcing)

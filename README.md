@@ -3,6 +3,6 @@ Status monitoring for GamesmanUni and its solver backends. The status page itsel
 
 - `prober/`  probes the services every 5 minutes and records results
 - `site/`    small fallback status page (GitHub Pages) for when nyc is down
-- `docs/`    plan and data-format spec
+- `docs/`    plan, data-format spec and [health checks reference](docs/HEALTH.md)
 - `.github/workflows/`  scheduled probe and cleanup jobs
 - `data` branch: the results (`current.json`, `daily.json`, `raw/`)

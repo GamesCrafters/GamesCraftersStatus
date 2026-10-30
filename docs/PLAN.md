@@ -94,7 +94,7 @@ URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. 
 - **Schedule and retry:** the prober runs **hourly**. If a component is not `ok`, it is re-checked once, 90 s later, in the same run, and the retry result is what gets recorded, so one blip never reaches the page and a real problem is confirmed within a single run (about an hour after it starts at worst). Table of outcomes in DATA_FORMATS.md. A club-level site with few users does not need faster, and 3–5 checks a day would be too sparse to be useful (outages could fall between checks, history would be thin).
 - **No data is never down.** Skipped or delayed GitHub runs show as gray and are left out of uptime.
 - **If nyc is entirely unreachable,** every component is `down` with its own real reason (e.g. `ConnectTimeout`). No separate "unknown" state.
-- **overall** = the worst confirmed status of any component.
+- **overall** = the worst status of any component.
 
 ## 6. The Uni `/status` page (main surface)
 
@@ -107,7 +107,7 @@ URL form: `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>`. 
 1. **Overall banner:** "All systems operational" / "Some systems degraded" / "Partial outage", plus "Last checked 3 min ago" from `updatedAt`. If `updatedAt` is more than 2 hours old, show "Status data may be stale".
 2. **Groups** (Website, API, Solvers), each with its components. Per component:
    - name, current status pill, "since <relative time>",
-   - 90 daily bars (oldest left, today right) colored by the day's worst confirmed status, gray for no data. Hover or tap shows the date, uptime % and counts.
+   - 90 daily bars (oldest left, today right) colored by the day's worst status, gray for no data. Hover or tap shows the date, uptime % and counts.
    - "99.8% uptime (90 days)",
    - expandable details: latency now, last failure time and reason.
 3. **Latency chart:** daily p95 per component over 90 days (solvers on one chart is fine).
@@ -167,7 +167,7 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 
 ### Phase 3: Uni `/status` page (about 1–2 weeks, overlaps with burn-in)
 - **3.1** Branch in GamesmanUni (see open question 3 for the base branch). Add the route, `TheStatusPage.vue`, a small `statusApi.ts` fetcher, the i18n strings and the header link.
-- **3.2** Build it against the live `data` branch, plus a local fixture set covering: all green, a confirmed outage, a degraded day, gray days, a long outage, stale data, and fetch failure.
+- **3.2** Build it against the live `data` branch, plus a local fixture set covering: all green, an outage, a degraded day, gray days, a long outage, stale data, and fetch failure.
 - **3.3** Check all themes, phone width, and keyboard/screen-reader basics (pills have text, bars have labels).
 - **3.4 Fallback page** in `site/` of the Status repo.
 - **Done when:** `yarn build` passes, every fixture renders correctly, and the team has reviewed it locally (`yarn preview`).
@@ -179,11 +179,11 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 - **4.4** Announce to the team, and add a status badge or link to the GamesmanUni README.
 
 ### Phase 5: Later (each independent, in suggested order)
-- **5.1 Slack alerts** on confirmed state changes (down, degraded, recovered), webhook in an Actions secret, plus a dead-man alert if `current.json` is older than 2 hours.
+- **5.1 Slack alerts** on state changes (down, degraded, recovered), webhook in an Actions secret, plus a dead-man alert if `current.json` is older than 2 hours.
 - **5.2 Header status dot** and **in-context warnings** in Uni: a small banner on game pages whose solver is currently down.
 - **5.3 Health endpoints (drafted 2026-10-29, local branches, not pushed).** The existing endpoints were inaccurate: every solver's `/health` reported `ok` from CPU and memory of its own HTTP process without touching solved data, returned 503 for "busy", and read CPU as 0.0 after restarts. UWAPI's `/health/` only relayed those, and `/games/health/` fanned out to about 700 backend requests per call with timeout handling that could never fire. Drafted fixes:
   - **Solvers** (`fix/health-liveness` in GamesmanClassic, One, Puzzles, Py): `/health` is honest liveness only: always 200 with `status`, `uptimeSeconds`, `rssMb` (Classic also `gameProcesses`). Classic also accepts `/health/` and query strings.
-  - **UWAPI** (`feature/health-endpoint`, in the `GamesCraftersUWAPI-health` worktree): `/health/` runs the four canaries through the providers in parallel with a 50 s limit and a 30 s cache, and reports per-solver `status`/`latencyMs`/`detail` (contract in DATA_FORMATS.md). `/games/health/` is removed from the public API; its idea moves to 5.4. Solver provider requests get a 60 s timeout (today a hung solver holds that request and its thread forever). Tests in `tests/test_health.py`. The branch must merge `master` first (it predates `stormyseas`).
+  - **UWAPI** (`feature/health-endpoint`, in the `GamesCraftersUWAPI-health` worktree): `/health/` runs the four canaries through the providers in parallel with a 50 s limit and a 30 s cache, and reports per-solver `status`/`latencyMs`/`detail` (contract in DATA_FORMATS.md). `/games/health/` is removed from the public API; its idea moves to 5.4. Solver provider requests get a 60 s timeout (today a hung solver holds that request and its thread forever). Tests in `tests/test_health.py`. `master` is already merged into the branch.
   - **Once deployed,** the prober can read `/universal/v1/health/` for better failure details than "got nothing". Until then the prober's own canaries are enough.
 - **5.4 Nightly golden-list run** across many games and variants to catch broken data for individual games.
 - **5.5 Incident notes** (a hand-written `incidents.json` shown on the page).

@@ -194,7 +194,7 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 
 1. **Owners:** *Answered 2026-10-29:* Nahee develops and maintains the Status repo and prober. Still open: who reviews and deploys the Uni change.
 2. **Org repo:** *Answered 2026-10-29:* the name is `GamesCraftersStatus` in the GamesCrafters org, and Nahee can create it.
-3. **Uni base branch:** the `/status` page should be built on `main` (what's deployed) or on `ui-update` (the redesign in progress, which introduces the `--gu-*` theme variables)? This affects styling and when it can ship.
+3. **Uni base branch:** *Answered 2026-10-29:* build on `main`, on a feature branch `feature/status-page` merged by pull request. Use only theme variables `main` already has, so restyling is small when `ui-update` (with its `--gu-*` variables) merges later.
 4. **Public detail:** *Answered 2026-10-29:* yes, as long as raw failure details are never output. The prober already guarantees this: no response bodies or raw error text, only fixed short messages, HTTP codes, error-type names and filtered values.
 5. **Slack (Phase 5):** which channel, and who creates the webhook?
 

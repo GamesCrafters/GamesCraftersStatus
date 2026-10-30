@@ -1,76 +1,107 @@
 # Data formats
 
-This is the shared contract between the `/health` endpoint, the prober, the rollup step and the status page. Change it here first, then change the code.
+This is the shared contract between the prober config, the prober, the cleanup job, the Uni `/status` page and the fallback page. Change it here first, then change the code. See [PLAN.md](PLAN.md) for the why.
 
-**Status: DRAFT for review (step A1).** Items marked **[DECISION]** are open and listed again at the bottom. Example values (latencies, canary answers) are illustrative, not verified against the live servers.
+**Status: DRAFT for final review (plan step 1.1).** Canary values were verified against the live API on 2026-10-29. Latencies in examples are illustrative.
 
 ## Conventions
 
-- All timestamps are ISO 8601 in UTC with a trailing `Z`, e.g. `2026-09-18T19:05:12Z`.
-- A "day" is a **UTC** calendar day, written `YYYY-MM-DD`. The page should label bars as UTC.
-- Every file has `"schemaVersion": 1`. Bump it on any breaking change.
+- All timestamps are ISO 8601 in UTC with a trailing `Z`, e.g. `2026-10-29T19:05:12Z`.
+- A "day" is a **UTC** calendar day, written `YYYY-MM-DD`. The page labels bars as UTC.
+- Every data file has `"schemaVersion": 1`. Bump it on any breaking change. Readers show a soft warning for a higher version and render what they can.
 - Status values are exactly `ok`, `degraded`, `down` (lowercase).
-- Detail strings are short (max about 200 characters), plain text, and already sanitized: no stack traces, tokens, headers, IPs or user data.
+- Detail strings are short (max about 200 characters), plain text, and sanitized: no response bodies, stack traces, tokens, headers or IPs.
 
 ## Components
 
 Ids are stable and never renamed. The page gets display names and grouping from `current.json`, so it needs no separate config.
 
-| id | Group | What the prober checks |
-|---|---|---|
-| `frontend` | Website | `GET https://nyc.cs.berkeley.edu/uni/` returns 200 and looks like the app (contains a known marker) |
-| `api` | API | `GET https://nyc.cs.berkeley.edu/universal/v1/` returns 200 and a non-empty game list; `/health` was reachable |
-| `instructions` | API | `GET /universal/v1/<game>/<variant>/instructions/` for one known game returns non-empty instructions text (end to end: nyc reaching the Explainers repo on GitHub, the 2 s timeout, and the XML being valid; UWAPI returns an empty string on any failure, so 200 alone proves nothing) |
-| `solver-classic` | Solvers | Reported by `/health` (canary on GamesmanClassic) |
-| `solver-one` | Solvers | Reported by `/health` (canary on GamesmanOne) |
-| `solver-puzzles` | Solvers | Reported by `/health` (canary on GamesmanPuzzles) |
-| `solver-py` | Solvers | Reported by `/health` (canary on GamesmanPy) |
+| id | Group | Name | What the prober checks |
+|---|---|---|---|
+| `frontend` | `website` | GamesmanUni | `GET /uni/` is 200 and contains `<title>GamesmanUni</title>` and `id="app"`; the main `/uni/assets/index.*.js` it references is 200 |
+| `api` | `api` | Universal Web API | `GET /universal/v1/` is 200 and a JSON list of at least 50 games |
+| `instructions` | `api` | Game instructions | `GET /universal/v1/0to10by1or2/regular/instructions/?locale=en` is 200 and `instructions` starts with `# 0 to 10 by 1 or 2` |
+| `solver-classic` | `solvers` | GamesmanClassic | canary (see config) |
+| `solver-one` | `solvers` | GamesmanOne | canary |
+| `solver-puzzles` | `solvers` | GamesmanPuzzles | canary |
+| `solver-py` | `solvers` | GamesmanPy | canary |
 
 Groups, in display order: `website` (Website), `api` (API), `solvers` (Solvers).
 
-Not monitored: the Lichess tablebase used for chess (a third-party service, not ours) is deliberately excluded.
+Not monitored: the Lichess tablebase (third-party), and games UWAPI computes in-process (Nim, Kayles, Dawson's Chess, ...).
 
-## 1. `/health` response (served by UWAPI)
+## 1. Prober config: `prober/config.json` (on `main`)
 
-`GET /universal/v1/health`. Public, no secret. The result is cached in memory for 30 to 60 seconds. It reports only the four solvers. The prober measures the other components itself.
+The only place URLs, canaries and thresholds live.
 
 ```json
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-09-18T19:05:12Z",
-  "cached": false,
-  "components": {
-    "solver-classic": { "status": "ok",   "latencyMs": 142, "detail": "canary ok" },
-    "solver-one":     { "status": "ok",   "latencyMs": 388, "detail": "canary ok" },
-    "solver-puzzles": { "status": "down", "latencyMs": 3000, "detail": "canary mismatch: expected win/5, got unsolved" },
-    "solver-py":      { "status": "down", "latencyMs": 3000, "detail": "ConnectionError: connection refused" }
-  }
+  "baseUrl": "https://nyc.cs.berkeley.edu",
+  "timeoutMs": 10000,
+  "defaultDegradedMs": 2000,
+  "confirmAfter": 2,
+  "groups": [
+    { "id": "website", "name": "Website" },
+    { "id": "api",     "name": "API" },
+    { "id": "solvers", "name": "Solvers" }
+  ],
+  "components": [
+    { "id": "frontend", "group": "website", "name": "GamesmanUni",
+      "check": "frontend", "path": "/uni/", "markers": ["<title>GamesmanUni</title>", "id=\"app\""] },
+    { "id": "api", "group": "api", "name": "Universal Web API",
+      "check": "gameList", "path": "/universal/v1/", "minGames": 50 },
+    { "id": "instructions", "group": "api", "name": "Game instructions",
+      "check": "instructions", "path": "/universal/v1/0to10by1or2/regular/instructions/?locale=en",
+      "startsWith": "# 0 to 10 by 1 or 2" },
+    { "id": "solver-classic", "group": "solvers", "name": "GamesmanClassic",
+      "check": "canary", "game": "0to10by1or2", "variant": "regular", "position": "1_0",
+      "expect": { "positionValue": "win", "remoteness": 7 } },
+    { "id": "solver-one", "group": "solvers", "name": "GamesmanOne",
+      "check": "canary", "game": "quixo", "variant": "3x3", "position": "1_---------",
+      "expect": { "positionValue": "win", "remoteness": 7 } },
+    { "id": "solver-puzzles", "group": "solvers", "name": "GamesmanPuzzles",
+      "check": "canary", "game": "sevenpennies", "variant": "regular", "position": "00000000_9",
+      "expect": { "positionValue": "win", "remoteness": 14 } },
+    { "id": "solver-py", "group": "solvers", "name": "GamesmanPy",
+      "check": "canary", "game": "stormyseas", "variant": "beg1",
+      "position": "oowowwwowowwwooowrwowpwwRwwoPwwwowo7",
+      "expect": { "positionValue": "win", "remoteness": 3 } }
+  ]
 }
 ```
 
-Rules:
+- A canary requests `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>` and passes when `positionValue` and `remoteness` match and `moves` is a non-empty list.
+- A component may set its own `degradedMs` to override `defaultDegradedMs`.
+- Display order of components within a group is their order in this file.
 
-- `status` here is only `ok` or `down`. `down` means the solver did not answer, timed out, or the canary answer did not match. Whether a correct-but-slow answer counts as `degraded` is decided by the prober (see decision 1).
-- Each backend has its own timeout, so one hung solver cannot hang the endpoint. A timeout is `down` with detail like `timeout after 3000 ms`.
-- `cached` is true when the response was served from the cache. `generatedAt` is when the canaries actually ran.
-- `detail` is `canary ok` on success. On failure it is `canary mismatch: expected <value>/<remoteness>, got <value>/<remoteness>` or `<ErrorClass>: <short message>`.
+**Detail strings** the prober writes:
 
-## 2. Raw run file: `raw/YYYY-MM-DD/HHMMSS.json` (on the `data` branch)
+| Situation | `detail` |
+|---|---|
+| pass | `ok` |
+| correct but slow | `ok, slow (2412 ms > 2000 ms)` |
+| canary mismatch | `canary mismatch: expected win/7, got lose/3` (or `got nothing` when the fields are missing) |
+| content check failed | `marker missing`, `asset 404`, `empty instructions`, `only 12 games` |
+| HTTP error | `HTTP 502` |
+| no response | `<ErrorClass>`, e.g. `ConnectTimeout`, `ReadTimeout after 10000 ms`, `ConnectionError` |
+| bad body | `invalid JSON` |
 
-One file per probe run, named by the run's UTC start time. Kept about 30 days, then deleted by the cleanup job.
+## 2. Raw run file: `raw/YYYY-MM-DD/HHMMSS.json` (on `data`)
+
+One file per probe run, named by the run's UTC start time. Kept 30 days, then deleted by the cleanup job.
 
 ```json
 {
   "schemaVersion": 1,
-  "startedAt": "2026-09-18T19:05:12Z",
+  "startedAt": "2026-10-29T19:05:12Z",
   "components": {
-    "frontend":       { "observed": "ok",       "confirmed": "ok", "latencyMs": 210,  "httpStatus": 200, "detail": "ok" },
-    "api":            { "observed": "ok",       "confirmed": "ok", "latencyMs": 305,  "httpStatus": 200, "detail": "ok" },
-    "solver-classic": { "observed": "ok",       "confirmed": "ok", "latencyMs": 142,  "httpStatus": 200, "detail": "canary ok" },
-    "solver-one":     { "observed": "degraded", "confirmed": "ok", "latencyMs": 3412, "httpStatus": 200, "detail": "canary ok, slow (threshold 3000 ms)" },
-    "solver-puzzles": { "observed": "down",     "confirmed": "ok", "latencyMs": 3000, "httpStatus": 200, "detail": "canary mismatch: expected win/5, got unsolved" },
-    "solver-py":      { "observed": "ok",       "confirmed": "ok", "latencyMs": 97,   "httpStatus": 200, "detail": "canary ok" },
-    "instructions":   { "observed": "ok",       "confirmed": "ok", "latencyMs": 480,  "httpStatus": 200, "detail": "ok" }
+    "frontend":       { "observed": "ok",       "confirmed": "ok", "latencyMs": 210,  "httpStatus": 200,  "detail": "ok" },
+    "api":            { "observed": "ok",       "confirmed": "ok", "latencyMs": 305,  "httpStatus": 200,  "detail": "ok" },
+    "instructions":   { "observed": "ok",       "confirmed": "ok", "latencyMs": 480,  "httpStatus": 200,  "detail": "ok" },
+    "solver-classic": { "observed": "ok",       "confirmed": "ok", "latencyMs": 142,  "httpStatus": 200,  "detail": "ok" },
+    "solver-one":     { "observed": "degraded", "confirmed": "ok", "latencyMs": 2412, "httpStatus": 200,  "detail": "ok, slow (2412 ms > 2000 ms)" },
+    "solver-puzzles": { "observed": "down",     "confirmed": "ok", "latencyMs": 95,   "httpStatus": 500,  "detail": "HTTP 500" },
+    "solver-py":      { "observed": "down",     "confirmed": "ok", "latencyMs": null, "httpStatus": null, "detail": "ReadTimeout after 10000 ms" }
   }
 }
 ```
@@ -78,42 +109,41 @@ One file per probe run, named by the run's UTC start time. Kept about 30 days, t
 Fields per component:
 
 - `observed`: what this single probe saw.
-- `confirmed`: the state after the debounce rule (see below). This is what the page and uptime use.
-- `latencyMs`: measured by the prober. `null` if there was no response.
-- `httpStatus`: HTTP status of the probed URL, or `null` if there was no response.
-- `detail`: sanitized text as described above.
+- `confirmed`: the state after the debounce rule. This is what the page and uptime use.
+- `latencyMs`: measured by the prober (for `frontend`, the sum of both requests). `null` if there was no response.
+- `httpStatus`: HTTP status, or `null` if there was no response.
+- `detail`: see the table above.
 
-**Debounce rule.** `confirmed` changes to a new status only after **2 consecutive probes** observe that same new status. After one probe that disagrees with `confirmed`, `confirmed` stays as it was and `current.json` records the pending change. (In the example above, `solver-puzzles` was observed `down` once, so it is still confirmed `ok`.)
+**Debounce rule.** `confirmed` changes to a new status only after `confirmAfter` (2) consecutive probes observe that same new status. Until then `confirmed` stays as it was and `current.json` records the pending change. An observation equal to `confirmed` clears any pending change. (In the example, `solver-puzzles` and `solver-py` were each observed `down` once, so they are still confirmed `ok`.)
 
-**Degraded rule.** The prober sets `observed: "degraded"` when the check is correct but `latencyMs` is above that component's threshold (starting around 3000 ms, tuned from real data).
+**First run:** with no previous `current.json`, the first observation is confirmed immediately.
 
-**If `/health` cannot be reached** (timeout, error, non-JSON), the four `solver-*` components are recorded `observed: "down"` with detail `unreachable via api`, and `api` is `down` with the real reason (see decision 2).
+## 3. `current.json` (on `data`, overwritten every run)
 
-## 3. `current.json` (on the `data` branch, overwritten every run)
-
-Latest confirmed state plus what the page needs to draw itself.
+Latest confirmed state plus everything the page needs to draw itself.
 
 ```json
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-18T19:05:15Z",
+  "updatedAt": "2026-10-29T19:05:15Z",
   "overall": "ok",
   "groups": [
-    { "id": "website",  "name": "Website",  "components": ["frontend"] },
-    { "id": "api",      "name": "API",      "components": ["api", "instructions"] },
-    { "id": "solvers",  "name": "Solvers",  "components": ["solver-classic", "solver-one", "solver-puzzles", "solver-py"] }
+    { "id": "website", "name": "Website", "components": ["frontend"] },
+    { "id": "api",     "name": "API",     "components": ["api", "instructions"] },
+    { "id": "solvers", "name": "Solvers", "components": ["solver-classic", "solver-one", "solver-puzzles", "solver-py"] }
   ],
   "components": {
     "solver-puzzles": {
       "name": "GamesmanPuzzles",
       "group": "solvers",
       "status": "ok",
-      "since": "2026-09-10T03:20:00Z",
-      "lastCheckedAt": "2026-09-18T19:05:12Z",
-      "latencyMs": 3000,
-      "detail": "canary mismatch: expected win/5, got unsolved",
-      "pending": { "status": "down", "count": 1, "firstSeen": "2026-09-18T19:05:12Z" },
-      "lastFailure": { "at": "2026-09-17T08:15:00Z", "detail": "timeout after 3000 ms" }
+      "since": "2026-10-10T03:20:00Z",
+      "lastCheckedAt": "2026-10-29T19:05:12Z",
+      "latencyMs": 95,
+      "detail": "HTTP 500",
+      "pending": { "status": "down", "count": 1, "firstSeen": "2026-10-29T19:05:12Z" },
+      "lastFailure": { "at": "2026-10-29T19:05:12Z", "detail": "HTTP 500" },
+      "lastStateChange": { "at": "2026-10-10T03:20:00Z", "from": "down", "to": "ok" }
     }
   }
 }
@@ -123,39 +153,40 @@ Latest confirmed state plus what the page needs to draw itself.
 
 Fields:
 
-- `overall`: the worst `status` across all components.
-- `groups`: display order and membership. Names and groups live here so the page needs no config file.
+- `overall`: the worst confirmed `status` across all components.
+- `groups`: display order and membership.
 - `status`: the confirmed status. `since`: when this confirmed status began.
-- `pending`: `null` when nothing is pending, otherwise the status seen and how many consecutive probes have seen it. When `count` reaches 2, the status becomes confirmed and `pending` resets to `null`.
-- `lastFailure`: the most recent probe that observed `down` (or `null`), kept across runs so the page can show "last failure reason".
+- `pending`: `null`, or the new status seen and how many consecutive probes have seen it.
+- `lastFailure`: the most recent probe that **observed** `down` (or `null`), kept across runs so the page can show the last failure reason even for blips.
+- `lastStateChange`: the most recent confirmed transition (or `null`). Slack alerts (plan 5.1) fire exactly when this changes.
 - `detail` and `latencyMs`: from the most recent probe.
 
-## 4. `daily.json` (on the `data` branch)
+## 4. `daily.json` (on `data`)
 
 Per component, per UTC day, counting **confirmed** statuses.
 
 ```json
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-18T19:05:15Z",
+  "updatedAt": "2026-10-29T19:05:15Z",
   "components": {
     "api": {
-      "2026-09-17": { "checks": 288, "ok": 288, "degraded": 0, "down": 0, "avgLatencyMs": 301, "p95LatencyMs": 470, "worst": "ok" },
-      "2026-09-18": { "checks": 229, "ok": 226, "degraded": 2, "down": 1, "avgLatencyMs": 320, "p95LatencyMs": 610, "worst": "down" }
+      "2026-10-28": { "checks": 288, "ok": 288, "degraded": 0, "down": 0, "avgLatencyMs": 301, "p95LatencyMs": 470, "worst": "ok" },
+      "2026-10-29": { "checks": 229, "ok": 226, "degraded": 2, "down": 1, "avgLatencyMs": 320, "p95LatencyMs": 610, "worst": "down" }
     }
   }
 }
 ```
 
-Fields and rules:
+Rules:
 
-- `checks` = `ok` + `degraded` + `down`. A full day is 288 checks at 5-minute spacing; fewer means GitHub skipped or delayed runs.
-- **No data:** a day with no entry, or `checks: 0`, is drawn gray. Missed runs are never counted as `down`.
-- `worst`: the worst confirmed status that day (`down` > `degraded` > `ok`). It sets the bar color (see decision 3).
-- **Uptime %** over a window = `(ok + degraded) / (ok + degraded + down)`, summed over the days in the window, skipping days with no data. (Degraded counts as up.)
-- Latency stats (`avgLatencyMs`, `p95LatencyMs`) ignore probes that had no response.
-- The page's latency chart uses the daily `p95LatencyMs` over the last 90 days.
-- `daily.json` keeps every day for now (about 100 KB per year). Revisit after a year.
+- `checks` = `ok` + `degraded` + `down`. A full day is 288 checks; fewer means GitHub skipped or delayed runs.
+- **No data:** a missing day, or `checks: 0`, is drawn gray. Missed runs are never counted as `down`.
+- `worst`: the worst confirmed status that day. It sets the bar color: red if any confirmed `down`, else yellow if any confirmed `degraded`, else green.
+- **Uptime %** over a window = `(ok + degraded) / checks`, summed over the days in the window, skipping days with no data. Degraded counts as up.
+- Latency stats ignore probes with no response.
+- **Recompute:** every probe run rebuilds **today's** entry from today's raw files, so today's bar is at most one run behind and self-heals after a failed run. Past days are never rewritten.
+- `daily.json` keeps every day (about 100 KB per year).
 
 ## Who writes what
 
@@ -163,17 +194,16 @@ Fields and rules:
 |---|---|---|
 | `raw/.../HHMMSS.json` | prober | every run |
 | `current.json` | prober | every run |
-| `daily.json` | prober (recomputes **today's** entry from today's raw files) | every run (see decision 4) |
-| deletion of old raw files | cleanup job | daily |
+| `daily.json` (today's entry) | prober | every run |
+| deletion of raw days older than 30 | cleanup job | daily |
 
-## Open decisions
+The probe and cleanup workflows share one `concurrency` group, so they never push at the same time. Pushes retry with `git pull --rebase`.
 
-1. **DECIDED: the prober decides `degraded`.** `/health` returns only `ok` or `down` plus `latencyMs`, and the prober applies each component's latency threshold from its own config. Thresholds live in one place and can be tuned without redeploying UWAPI to nyc.
-2. **DECIDED: when `/health` is unreachable,** the four solvers are recorded `down` with detail `unreachable via api`, and `api` is `down` with the real reason. This matches what users experience and needs no extra status. (A separate gray `unknown` status was considered and rejected.)
-3. **DECIDED: bar color is the day's worst confirmed status** (red if any confirmed `down` check, else yellow if any confirmed `degraded`, else green; gray for no data). A single confirmed outage makes the whole day red, like OpenAI's page. Revisit if it feels too strict; the stored daily counts mean switching to a downtime-percentage threshold only changes the page's drawing logic, not the data.
-4. **DECIDED: every probe run recomputes today's entry in `daily.json`** from today's raw files (at most 288 small files), so today's bar is never more than about 5 minutes behind. The plan's `rollup.yml` becomes a simple daily **cleanup** job that only deletes raw files older than about 30 days. Notes for the workflows:
-   - The probe workflow and the cleanup workflow must share the **same `concurrency` group name**, so they never push to the `data` branch at the same time. GitHub runs one job per group and keeps at most one waiting; a third arrival cancels the waiting one, which shows up as a gap (treated as "no data", never as `down`).
-   - Pushes should use a `git pull --rebase` retry as a backup in case a push is rejected.
-   - Recomputing from raw files makes today's entry self-healing: a failed or skipped run is corrected by the next one.
-5. **Exact probe details** are still TBD: the marker text for `frontend`, and which game and variant `instructions` should request (pick a game that has instructions in the Explainers repo, verified against the live API once nyc is back).
-6. **Optional later:** a `recent.json` with the last 24 hours of latency per component, for a finer latency chart than the daily p95.
+## Decisions (all settled)
+
+1. The prober decides `degraded` from its own thresholds.
+2. When nyc is unreachable, every component is `down` with its real reason. No `unknown` state.
+3. Bar color is the day's worst confirmed status. If that turns out too strict, switching to a downtime-percentage rule changes only the page's drawing, not the data.
+4. Every probe run recomputes today's `daily.json` entry; the separate job only cleans up raw files.
+5. Frontend markers, the instructions game and all four canaries are chosen and verified (section 1).
+6. *Later:* `recent.json` with the last 24 hours of per-probe latency.

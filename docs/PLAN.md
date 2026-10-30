@@ -151,7 +151,7 @@ Work goes one step at a time. Every **[GO]** step is outward-facing (creates a r
 ### Phase 1: Prober, locally against live nyc (about 1 week)
 - **1.1 Finalize DATA_FORMATS.md** (drop the DRAFT label). Done when the team agrees on it.
 - **1.2 Prober config** `prober/config.json`: the components, URLs, canaries, thresholds and groups from section 4.
-- **1.3 Prober script** `prober/probe.py` (Python 3, `requests` only). Runs all checks in parallel with timeouts, applies the status rules and the in-run retry, writes the raw file, `current.json` and today's `daily.json` entry. Takes a `--data-dir` argument so it runs against a local folder.
+- **1.3 Prober script** `prober/probe.py` (Python 3, `requests` only). Runs the checks one at a time with timeouts (in parallel they inflate each other's latency), applies the status rules and the in-run retry, writes the raw file, `current.json` and today's `daily.json` entry. Takes a `--data-dir` argument so it runs against a local folder.
 - **1.4 Tests** (`pytest`, a local fake server): ok, slow (degraded), wrong canary, empty instructions, 500, timeout, connection refused; retry (a blip that passes on retry is recorded ok, two failures are recorded down, only non-ok components are re-checked); `since`/`lastFailure` bookkeeping; daily recompute including gaps; UTC day rollover.
 - **1.5 Live run:** run the prober locally against real nyc for a few hours (a loop every few minutes) and check that the files look right and nothing reports `down` falsely.
 - **1.6 Cleanup script** `prober/cleanup.py` (delete raw days older than 30) with a test.

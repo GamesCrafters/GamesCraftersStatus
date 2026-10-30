@@ -35,7 +35,7 @@ Why a layer below the prober at all: from outside, a dead solver and a corrupt d
 |---|---|
 | `ok` | correct answer in under 30 s |
 | `degraded` | correct answer, but slower than 30 s (a person would be annoyed, but it works) |
-| `down` | no answer, error, wrong answer, or no reply within 60 s |
+| `down` | no answer, error, wrong answer, or no reply within 60 s (or no connection within 10 s) |
 
 60 s is the same limit real requests get (`REQUEST_TIMEOUT_S` in UWAPI's `games/models.py`), so `down` means a real user would have failed too. Only the prober assigns `degraded`, from its own config, so the threshold can change without redeploying nyc. UWAPI's `/health/` reports only `ok` or `down`.
 
@@ -60,7 +60,7 @@ A canary passes when `positionValue` and `remoteness` match and `moves` is non-e
 
 ## What the prober does
 
-Runs hourly (GitHub Actions). Checks seven components in parallel: `frontend`, `api`, `instructions`, and the four solvers. If any component is not `ok`, it re-checks only those after 90 s, in the same run, and records the retry's result. So one bad check never reaches the page, and a real problem is confirmed within a single run. Full rules and the outcome table are in DATA_FORMATS.md (section 2).
+Runs hourly (GitHub Actions). Checks seven components one at a time (in parallel they slow each other down and inflate the latency numbers): `frontend`, `api`, `instructions`, and the four solvers. If any component is not `ok`, it re-checks only those after 90 s, in the same run, and records the retry's result. So one bad check never reaches the page, and a real problem is confirmed within a single run. Full rules and the outcome table are in DATA_FORMATS.md (section 2).
 
 ## UWAPI `GET /health/`
 

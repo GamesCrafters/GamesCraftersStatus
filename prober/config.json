@@ -1,0 +1,34 @@
+{
+  "baseUrl": "https://nyc.cs.berkeley.edu",
+  "timeoutMs": 60000,
+  "connectTimeoutMs": 10000,
+  "defaultDegradedMs": 30000,
+  "retryDelaySeconds": 90,
+  "groups": [
+    { "id": "website", "name": "Website" },
+    { "id": "api",     "name": "API" },
+    { "id": "solvers", "name": "Solvers" }
+  ],
+  "components": [
+    { "id": "frontend", "group": "website", "name": "GamesmanUni",
+      "check": "frontend", "path": "/uni/", "markers": ["<title>GamesmanUni</title>", "id=\"app\""] },
+    { "id": "api", "group": "api", "name": "Universal Web API",
+      "check": "gameList", "path": "/universal/v1/", "minGames": 50 },
+    { "id": "instructions", "group": "api", "name": "Game instructions",
+      "check": "instructions", "path": "/universal/v1/0to10by1or2/regular/instructions/?locale=en",
+      "startsWith": "# 0 to 10 by 1 or 2" },
+    { "id": "solver-classic", "group": "solvers", "name": "GamesmanClassic",
+      "check": "canary", "game": "0to10by1or2", "variant": "regular", "position": "1_0",
+      "expect": { "positionValue": "win", "remoteness": 7 } },
+    { "id": "solver-one", "group": "solvers", "name": "GamesmanOne",
+      "check": "canary", "game": "quixo", "variant": "3x3", "position": "1_---------",
+      "expect": { "positionValue": "win", "remoteness": 7 } },
+    { "id": "solver-puzzles", "group": "solvers", "name": "GamesmanPuzzles",
+      "check": "canary", "game": "sevenpennies", "variant": "regular", "position": "00000000_9",
+      "expect": { "positionValue": "win", "remoteness": 14 } },
+    { "id": "solver-py", "group": "solvers", "name": "GamesmanPy",
+      "check": "canary", "game": "stormyseas", "variant": "beg1",
+      "position": "oowowwwowowwwooowrwowpwwRwwoPwwwowo7",
+      "expect": { "positionValue": "win", "remoteness": 3 } }
+  ]
+}

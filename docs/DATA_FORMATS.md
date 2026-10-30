@@ -38,6 +38,7 @@ The only place URLs, canaries and thresholds live.
 {
   "baseUrl": "https://nyc.cs.berkeley.edu",
   "timeoutMs": 60000,
+  "connectTimeoutMs": 10000,
   "defaultDegradedMs": 30000,
   "retryDelaySeconds": 90,
   "groups": [
@@ -72,6 +73,7 @@ The only place URLs, canaries and thresholds live.
 
 - A canary requests `/universal/v1/<game>/<variant>/positions/?p=<url-encoded position>` and passes when `positionValue` and `remoteness` match and `moves` is a non-empty list.
 - A component may set its own `degradedMs` to override `defaultDegradedMs`.
+- `timeoutMs` limits waiting for an answer (over it is `down`); `connectTimeoutMs` limits opening the connection, so a run with nyc completely unreachable still finishes in a few minutes.
 - Display order of components within a group is their order in this file.
 
 **Detail strings** the prober writes:
@@ -80,11 +82,13 @@ The only place URLs, canaries and thresholds live.
 |---|---|
 | pass | `ok` |
 | correct but slow | `ok, slow (31412 ms > 30000 ms)` |
-| canary mismatch | `canary mismatch: expected win/7, got lose/3` (or `got nothing` when the fields are missing) |
-| content check failed | `marker missing`, `asset 404`, `empty instructions`, `only 12 games` |
+| canary mismatch | `canary mismatch: expected win/7, got lose/3` (`got nothing` when the fields are missing; a value that is not a short lowercase word or a whole number is shown as `unexpected`, so nothing arbitrary from a response is ever stored) |
+| canary without moves | `canary returned no moves` |
+| content check failed | `marker missing`, `asset not referenced`, `asset 404`, `asset empty`, `empty instructions`, `unexpected instructions`, `only 12 games`, `unexpected response` |
 | HTTP error | `HTTP 502` |
-| no response | `<ErrorClass>`, e.g. `ConnectTimeout`, `ReadTimeout after 60000 ms`, `ConnectionError` |
+| no response | `<ErrorClass>`, e.g. `ConnectTimeout`, `ReadTimeout after 60000 ms`, `ConnectionError`; `timeout after 60000 ms` when an answer trickles in but takes longer than the limit overall |
 | bad body | `invalid JSON` |
+| bug in the prober | `check failed: <ErrorClass>` (the other checks still run) |
 
 ## 2. Raw run file: `raw/YYYY-MM-DD/HHMMSS.json` (on `data`)
 
@@ -118,7 +122,7 @@ Fields per component:
 
 **Retry rule.** The schedule is hourly, so a bad check is confirmed inside the same run instead of waiting for the next one:
 
-1. Run every check once, in parallel.
+1. Run every check once, **one at a time**. (Measured on 2026-10-29: sent all at once, the requests slowed each other down 2–3×, which would make the latency numbers misleading. One at a time, a whole run takes about 2 s.)
 2. If any component is not `ok`, wait `retryDelaySeconds` (90) and check **only those components** again.
 3. The retry result becomes `status`. In the example, `solver-puzzles` failed once but was fine on the retry, so it is recorded `ok` (with `firstStatus: "down"` for the record), while `solver-py` failed twice and is recorded `down`.
 

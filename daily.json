@@ -46,6 +46,15 @@
         "avgLatencyMs": 709,
         "p95LatencyMs": 940,
         "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 836,
+        "p95LatencyMs": 836,
+        "worst": "ok"
       }
     },
     "api": {
@@ -92,6 +101,15 @@
         "down": 0,
         "avgLatencyMs": 168,
         "p95LatencyMs": 267,
+        "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 289,
+        "p95LatencyMs": 289,
         "worst": "ok"
       }
     },
@@ -140,6 +158,15 @@
         "avgLatencyMs": 579,
         "p95LatencyMs": 675,
         "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 614,
+        "p95LatencyMs": 614,
+        "worst": "ok"
       }
     },
     "solver-classic": {
@@ -186,6 +213,15 @@
         "down": 0,
         "avgLatencyMs": 203,
         "p95LatencyMs": 284,
+        "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 411,
+        "p95LatencyMs": 411,
         "worst": "ok"
       }
     },
@@ -234,6 +270,15 @@
         "avgLatencyMs": 243,
         "p95LatencyMs": 354,
         "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 303,
+        "p95LatencyMs": 303,
+        "worst": "ok"
       }
     },
     "solver-puzzles": {
@@ -280,6 +325,15 @@
         "down": 0,
         "avgLatencyMs": 222,
         "p95LatencyMs": 367,
+        "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 296,
+        "p95LatencyMs": 296,
         "worst": "ok"
       }
     },
@@ -328,8 +382,17 @@
         "avgLatencyMs": 180,
         "p95LatencyMs": 268,
         "worst": "ok"
+      },
+      "2026-11-04": {
+        "checks": 1,
+        "ok": 1,
+        "degraded": 0,
+        "down": 0,
+        "avgLatencyMs": 295,
+        "p95LatencyMs": 295,
+        "worst": "ok"
       }
     }
   },
-  "updatedAt": "2026-11-03T21:00:20Z"
+  "updatedAt": "2026-11-04T01:23:07Z"
 }

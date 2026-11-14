@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-11-14T18:03:51Z",
+  "components": {
+    "frontend": {
+      "status": "ok",
+      "latencyMs": 1337,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "api": {
+      "status": "ok",
+      "latencyMs": 221,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "instructions": {
+      "status": "ok",
+      "latencyMs": 454,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "solver-classic": {
+      "status": "ok",
+      "latencyMs": 241,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "solver-one": {
+      "status": "ok",
+      "latencyMs": 301,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "solver-puzzles": {
+      "status": "ok",
+      "latencyMs": 229,
+      "httpStatus": 200,
+      "detail": "ok"
+    },
+    "solver-py": {
+      "status": "ok",
+      "latencyMs": 223,
+      "httpStatus": 200,
+      "detail": "ok"
+    }
+  }
+}

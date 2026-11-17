@@ -165,11 +165,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 942,
+        "avgLatencyMs": 788,
         "p95LatencyMs": 1408,
         "worst": "ok"
       }
@@ -338,11 +338,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 153,
+        "avgLatencyMs": 130,
         "p95LatencyMs": 224,
         "worst": "ok"
       }
@@ -511,11 +511,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 412,
+        "avgLatencyMs": 380,
         "p95LatencyMs": 482,
         "worst": "ok"
       }
@@ -684,11 +684,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 169,
+        "avgLatencyMs": 147,
         "p95LatencyMs": 236,
         "worst": "ok"
       }
@@ -857,11 +857,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 230,
+        "avgLatencyMs": 207,
         "p95LatencyMs": 299,
         "worst": "ok"
       }
@@ -1030,11 +1030,11 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 158,
+        "avgLatencyMs": 134,
         "p95LatencyMs": 229,
         "worst": "ok"
       }
@@ -1203,15 +1203,15 @@
         "worst": "ok"
       },
       "2026-11-17": {
-        "checks": 2,
-        "ok": 2,
+        "checks": 3,
+        "ok": 3,
         "degraded": 0,
         "down": 0,
-        "avgLatencyMs": 156,
+        "avgLatencyMs": 133,
         "p95LatencyMs": 224,
         "worst": "ok"
       }
     }
   },
-  "updatedAt": "2026-11-17T14:26:50Z"
+  "updatedAt": "2026-11-17T22:53:16Z"
 }

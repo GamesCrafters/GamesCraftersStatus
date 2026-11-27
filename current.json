@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-27T10:53:21Z",
+  "updatedAt": "2026-11-27T19:58:04Z",
   "overall": "ok",
   "groups": [
     {
@@ -35,8 +35,8 @@
       "group": "website",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:19Z",
-      "latencyMs": 804,
+      "lastCheckedAt": "2026-11-27T19:58:02Z",
+      "latencyMs": 1383,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
@@ -46,8 +46,8 @@
       "group": "api",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:19Z",
-      "latencyMs": 177,
+      "lastCheckedAt": "2026-11-27T19:58:02Z",
+      "latencyMs": 230,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
@@ -57,8 +57,8 @@
       "group": "api",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:20Z",
-      "latencyMs": 512,
+      "lastCheckedAt": "2026-11-27T19:58:03Z",
+      "latencyMs": 447,
       "detail": "ok",
       "lastFailure": {
         "at": "2026-11-11T15:14:26Z",
@@ -71,8 +71,8 @@
       "group": "solvers",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:20Z",
-      "latencyMs": 215,
+      "lastCheckedAt": "2026-11-27T19:58:03Z",
+      "latencyMs": 241,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
@@ -82,8 +82,8 @@
       "group": "solvers",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:20Z",
-      "latencyMs": 300,
+      "lastCheckedAt": "2026-11-27T19:58:03Z",
+      "latencyMs": 305,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
@@ -93,8 +93,8 @@
       "group": "solvers",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:20Z",
-      "latencyMs": 151,
+      "lastCheckedAt": "2026-11-27T19:58:03Z",
+      "latencyMs": 224,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
@@ -104,8 +104,8 @@
       "group": "solvers",
       "status": "ok",
       "since": "2026-10-30T06:26:37Z",
-      "lastCheckedAt": "2026-11-27T10:53:21Z",
-      "latencyMs": 313,
+      "lastCheckedAt": "2026-11-27T19:58:04Z",
+      "latencyMs": 233,
       "detail": "ok",
       "lastFailure": null,
       "lastStateChange": null
